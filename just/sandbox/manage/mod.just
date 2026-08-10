@@ -26,10 +26,28 @@ doctor:
     set -uo pipefail
     ok=0
     chk() { if eval "$2" >/dev/null 2>&1; then printf '  ok    %s\n' "$1"; else printf '  FAIL  %s\n' "$1"; ok=1; fi; }
+    # Ask OpenRouter whether the key can actually manage keys. A management key and
+    # an inference key are indistinguishable by prefix — both are sk-or-v1-… — so
+    # "is it set" cannot catch the common mistake of pasting the inference key.
+    # Without this, the wrong key first fails in CREATE, i.e. after a billable VM
+    # already exists. 401 = wrong key type; 000 = no network.
+    KEYCODE=""
+    if [ -n "${OPENROUTER_PROVISIONING_KEY:-}" ]; then
+        KEYCODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer ${OPENROUTER_PROVISIONING_KEY}" \
+            https://openrouter.ai/api/v1/keys 2>/dev/null)
+    fi
     chk "ssh exe.dev reachable"            'ssh -o BatchMode=yes -o ConnectTimeout=15 exe.dev whoami'
     chk "OPENROUTER_PROVISIONING_KEY set"  '[ -n "${OPENROUTER_PROVISIONING_KEY:-}" ]'
+    chk "  ...and mints (management key)"  '[ "$KEYCODE" = "200" ]'
     chk "run_record helper runs"           'sandbox_mount/host/run_record.py list'
     chk "provisioner present"              '[ -x sandbox_mount/guest/provision.sh ]'
     chk "models template has rates"        'python3 -c "import json;m=json.load(open(\"sandbox_mount/guest/models.json.tmpl\"))[\"providers\"][\"openrouter\"][\"models\"];assert all(set(x[\"cost\"])=={\"input\",\"output\",\"cacheRead\",\"cacheWrite\"} for x in m)"'
     chk "adw layer resolves"               'just --list adw'
+    case "$KEYCODE" in
+      401|403) echo "        hint: that key cannot manage keys. Create a MANAGEMENT key at"
+               echo "              https://openrouter.ai/settings/management-keys — note that"
+               echo "              /settings/keys makes inference keys, which look identical." ;;
+      000)     echo "        hint: could not reach openrouter.ai — key left unverified." ;;
+    esac
     [ "$ok" -eq 0 ] && echo "  sbx doctor: OK" || { echo "  sbx doctor: FAILED"; exit 1; }

@@ -55,7 +55,7 @@ Optional (only for a host-side orchestrator via `just local`; the VM image alrea
 ### Step 2 — Check Environment
 
 - If `.env` is missing, copy it: `cp .env.sample .env`, then tell the user which keys to fill.
-- Confirm (never print) `OPENROUTER_PROVISIONING_KEY` is set and non-empty. Host-only, mints/revokes the per-run runtime keys. Get one at https://openrouter.ai/settings/keys.
+- Confirm (never print) `OPENROUTER_PROVISIONING_KEY` is set and non-empty. Host-only, mints/revokes the per-run runtime keys. Get one at https://openrouter.ai/settings/management-keys — OpenRouter calls it a **Management API key**; `/settings/keys` makes *inference* keys instead. Both are `sk-or-v1-…`, so never diagnose the key by its prefix; `just sbx manage doctor` calls the API to check.
   - If empty: `warn` — required only to mount a sandbox; fine to leave blank for read-and-observe.
 - `OPENROUTER_API_KEY` (optional): only for running ADWs locally via `just local` / `just adw`. Inside a sandbox it is overwritten by a minted, capped runtime key.
 - `ANTHROPIC_API_KEY` (optional): Claude Code on its own key.

@@ -59,8 +59,10 @@ Every resource this system leans on, what it does, and whether you actually need
 | [`uv`](https://docs.astral.sh/uv/) | runs the PEP-723 Python ADW scripts | required | not needed |
 | [`just`](https://just.systems) | the whole command surface (all four namespaces) | required | helpful (to read the recipes) |
 | [exe.dev account](https://exe.dev) | the disposable VMs the factory runs inside | required to mount | not needed |
-| [OpenRouter provisioning key](https://openrouter.ai/settings/keys) | mints and revokes the per-run inference keys | required to mount | not needed |
+| [OpenRouter provisioning key](https://openrouter.ai/settings/management-keys) | mints and revokes the per-run inference keys | required to mount | not needed |
 | [Claude Code](https://claude.com/claude-code) + [Pi](https://github.com/badlogic/pi-mono) | the coding agents that do the work | preinstalled on the VM | not needed |
+
+> **Naming:** OpenRouter calls the provisioning key a **Management API key** and mints it at [`/settings/management-keys`](https://openrouter.ai/settings/management-keys). The ordinary [`/settings/keys`](https://openrouter.ai/settings/keys) page makes *inference* keys. Both look like `sk-or-v1-…`, so the prefix will not tell you which you have — `just sbx manage doctor` asks OpenRouter and tells you before a VM exists.
 
 Two credentials are the entire reason the sandbox is safe: the **exe.dev account** and the **OpenRouter provisioning key** live only on your host. Everything else is a fast, free toolchain install. If you only want to understand the design, clone the repo and read: no account, no key, nothing to spend.
 
