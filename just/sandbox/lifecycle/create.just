@@ -169,20 +169,42 @@ create RUN_ID *FLAGS:
     echo "key:     secret written to $KEY_FILE (0600) — FILL injects it"
 
     # ── 5. wait for ssh ────────────────────────────────────────────────────────
-    # All *.exe.xyz share one host key and the wildcard known_hosts entry is
-    # already installed, so BatchMode never stalls on a prompt.
+    # All *.exe.xyz share ONE host key, but nothing installs the wildcard
+    # known_hosts entry — registering with `ssh exe.dev` writes only `exe.dev`.
+    # Without it BatchMode dies instantly with "Host key verification failed" on
+    # a VM that is perfectly healthy, and the loop below reports that as a box
+    # that never booted. Seed it from the exe.dev entry the operator already
+    # trusts: identical key, so this introduces no new trust decision.
+    if ! ssh-keygen -F "$VM_NAME.exe.xyz" >/dev/null 2>&1; then
+        EXE_KEY=$(ssh-keygen -F exe.dev 2>/dev/null | grep -v '^#' | head -1 | cut -d' ' -f2-)
+        if [ -n "$EXE_KEY" ]; then
+            mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            printf '*.exe.xyz %s\n' "$EXE_KEY" >> ~/.ssh/known_hosts
+            echo "ssh:     seeded *.exe.xyz known_hosts entry from the trusted exe.dev key"
+        else
+            echo "create: no exe.dev entry in known_hosts — run 'ssh exe.dev' once first" >&2
+            exit 1
+        fi
+    fi
     echo "ssh:     waiting for $VM_NAME.exe.xyz (up to 60s) ..."
     WAIT_START=$SECONDS
     DEADLINE=$((SECONDS + 60))
     READY=0
+    SSH_ERR=""
     while [ "$SECONDS" -lt "$DEADLINE" ]; do
-        if ssh -o BatchMode=yes -o ConnectTimeout=5 "$VM_NAME.exe.xyz" true >/dev/null 2>&1; then
-            READY=1; break
-        fi
+        RC=0
+        SSH_ERR=$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$VM_NAME.exe.xyz" true 2>&1) || RC=$?
+        [ "$RC" -eq 0 ] && { READY=1; break; }
+        # A client-side refusal is not a transient boot delay — retrying for the
+        # full 60s only delays a failure that can never clear on its own.
+        case "$SSH_ERR" in
+            *"Host key verification failed"*|*"Permission denied"*) break ;;
+        esac
         sleep 2
     done
     if [ "$READY" -ne 1 ]; then
-        echo "create: ssh never answered on $VM_NAME.exe.xyz within 60s" >&2
+        echo "create: ssh did not come up on $VM_NAME.exe.xyz" >&2
+        [ -n "$SSH_ERR" ] && echo "create: ssh said: $SSH_ERR" >&2
         exit 1
     fi
     echo "ssh:     up after $((SECONDS - WAIT_START))s"

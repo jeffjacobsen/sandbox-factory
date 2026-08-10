@@ -105,17 +105,26 @@ teardown RUN_ID *FLAGS:
         TAR_TMP=$(mktemp -t "sbx-$RUN_ID")
         # One round trip, and `ls -d` filters to what actually exists so a run that
         # died before writing app_docs/ is not an error.
+        # The ssh exit status is captured separately from tar emptiness on purpose:
+        # a connection that never landed produces an empty tar too, and reporting
+        # that as "none found" is silent data loss immediately before a destroy.
+        ART_RC=0
         ssh "${SSH_OPTS[@]}" "$VM".exe.xyz \
             'cd app 2>/dev/null || exit 0; P=$(ls -d specs app_docs adws/adw_data/sssf.db run.log 2>/dev/null); [ -z "$P" ] && exit 0; tar cf - $P' \
-            > "$TAR_TMP" || true
-        if [ -s "$TAR_TMP" ]; then
+            > "$TAR_TMP" 2> "$TAR_TMP.err" || ART_RC=$?
+        if [ "$ART_RC" -ne 0 ]; then
+            echo "   artifacts: COULD NOT READ THE VM (ssh exit $ART_RC) — nothing harvested" >&2
+            [ -s "$TAR_TMP.err" ] && sed 's/^/   artifacts: /' "$TAR_TMP.err" >&2
+            echo "   artifacts: the vm is about to be destroyed; Ctrl-C now if it held work" >&2
+            rmdir "$ART" 2> /dev/null || true
+        elif [ -s "$TAR_TMP" ]; then
             tar xf "$TAR_TMP" -C "$ART"
             echo "   artifacts -> $ART"
         else
             echo "   artifacts: none found on the vm"
             rmdir "$ART" 2> /dev/null || true   # do not leave an empty dir implying we pulled something
         fi
-        rm -f "$TAR_TMP"
+        rm -f "$TAR_TMP" "$TAR_TMP.err"
     else
         echo "   artifacts: skipped (no vm)"
     fi

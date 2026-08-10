@@ -37,7 +37,12 @@ doctor:
             -H "Authorization: Bearer ${OPENROUTER_PROVISIONING_KEY}" \
             https://openrouter.ai/api/v1/keys 2>/dev/null)
     fi
+    # CREATE seeds the wildcard *.exe.xyz entry from the exe.dev one, so the real
+    # precondition is that at least one of the two is present and trusted.
+    KH=0
+    ssh-keygen -F vm-probe.exe.xyz >/dev/null 2>&1 || ssh-keygen -F exe.dev >/dev/null 2>&1 || KH=1
     chk "ssh exe.dev reachable"            'ssh -o BatchMode=yes -o ConnectTimeout=15 exe.dev whoami'
+    chk "known_hosts can verify a vm"      '[ "$KH" -eq 0 ]'
     chk "OPENROUTER_PROVISIONING_KEY set"  '[ -n "${OPENROUTER_PROVISIONING_KEY:-}" ]'
     chk "  ...and mints (management key)"  '[ "$KEYCODE" = "200" ]'
     chk "run_record helper runs"           'sandbox_mount/host/run_record.py list'
@@ -50,4 +55,6 @@ doctor:
                echo "              /settings/keys makes inference keys, which look identical." ;;
       000)     echo "        hint: could not reach openrouter.ai — key left unverified." ;;
     esac
+    [ "$KH" -eq 0 ] || echo "        hint: no exe.dev host key trusted yet. Run 'ssh exe.dev' once;
+              CREATE copies that key to a *.exe.xyz entry so VMs verify."
     [ "$ok" -eq 0 ] && echo "  sbx doctor: OK" || { echo "  sbx doctor: FAILED"; exit 1; }
