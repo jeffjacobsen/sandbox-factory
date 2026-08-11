@@ -400,7 +400,7 @@ So take it. Fork it, strip the parts you do not need, rename the agents, throw o
 
 ## See it in a real repo
 
-[`jeffjacobsen/inkwell`](https://github.com/jeffjacobsen/inkwell) is this skill already stamped into a real app: a populated `adws/`, a `justfile`, a `sandbox.yaml`, and the specs and docs the factory wrote on earlier runs. [`EXAMPLE.md`](../../../EXAMPLE.md) walks one of those runs end to end — prompt in, feature out, $1.96.
+[`jeffjacobsen/inkwell`](https://github.com/jeffjacobsen/inkwell) is this skill already stamped into a real app: a populated `adws/`, a `justfile`, a `sandbox.yaml`, and the specs and docs the factory wrote on earlier runs. [sbx's EXAMPLE.md](https://github.com/jeffjacobsen/sbx/blob/main/EXAMPLE.md) walks one of those runs end to end — prompt in, feature out, $1.96.
 
 ---
 
