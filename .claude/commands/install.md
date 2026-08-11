@@ -6,7 +6,7 @@ description: Install Factory In A Box — toolchain, deps, .env, and the sbx pre
 
 ## Purpose
 
-Set up this repo for development: the **Inkwell** app, the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (the ADW engine this repo runs), and the host-only **sandbox mount system**. This checks the toolchain, installs app dependencies, verifies `.env`, and runs the `sbx` preflight, without starting any servers. It is an interactive, agentic process: ask the user when a choice is needed.
+Set up this repo for development: the **Inkwell** app, the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (the ADW engine this repo runs), and the separately-installed **[sbx](https://github.com/jeffjacobsen/sbx)** orchestrator. This checks the toolchain, installs app dependencies, verifies `.env`, and runs the `sbx` preflight, without starting any servers. It is an interactive, agentic process: ask the user when a choice is needed.
 
 Two audiences, and the install serves both:
 
@@ -29,8 +29,8 @@ CONFIG_DIR: `adws/adw_sssf_config/` (five model rosters)
 - Show a status line immediately after each check (`ok` / `warn` / `fail`).
 - Auto-install what has a clean CDN installer (`bun`, `just`); ask before anything heavier.
 - Never read or print API key values — only confirm a variable is set and non-empty.
-- Never start a server or long-running process. `just inkwell test` is allowed (it exits); `just inkwell run` / `just obs ui` / `just sbx mount` are NOT part of install.
-- Never run `just sbx mount` or any `lifecycle` phase here — mounting spends money and creates a billable VM. That is a deliberate post-install action.
+- Never start a server or long-running process. `just inkwell test` is allowed (it exits); `just inkwell run` / `just obs ui` / `sbx mount` are NOT part of install.
+- Never run `sbx mount` or any `lifecycle` phase here — mounting spends money and creates a billable VM. That is a deliberate post-install action.
 
 ## Workflow
 
@@ -44,8 +44,8 @@ Foundational (gate — stop and guide if missing):
 Standard (needed to run the loop; warn if missing):
 
 - `uv` — runs the PEP-723 Python ADW scripts. Install: `curl -LsSf https://astral.sh/uv/install.sh | sh` (https://docs.astral.sh/uv/)
-- `just` — the command surface (`inkwell`, `adw`, `sbx`, `obs`, `local`). Auto-install: `curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin` (https://just.systems)
-- `python3` — the stdlib-only run-record helper (`sandbox_mount/host/run_record.py`). Usually preinstalled.
+- `just` — the command surface (`inkwell`, `adw`, `obs`, `local`). Auto-install: `curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin` (https://just.systems)
+- `python3` — used by sbx's stdlib-only helpers. Usually preinstalled.
 - `ssh` — the exe.dev control plane is SSH. Usually preinstalled.
 
 Optional (only for a host-side orchestrator via `just local`; the VM image already has these, so they are NOT needed to mount):
@@ -55,7 +55,7 @@ Optional (only for a host-side orchestrator via `just local`; the VM image alrea
 ### Step 2 — Check Environment
 
 - If `.env` is missing, copy it: `cp .env.sample .env`, then tell the user which keys to fill.
-- Confirm (never print) `OPENROUTER_PROVISIONING_KEY` is set and non-empty. Host-only, mints/revokes the per-run runtime keys. Get one at https://openrouter.ai/settings/management-keys — OpenRouter calls it a **Management API key**; `/settings/keys` makes *inference* keys instead. Both are `sk-or-v1-…`, so never diagnose the key by its prefix; `just sbx manage doctor` calls the API to check.
+- Confirm (never print) `OPENROUTER_PROVISIONING_KEY` is set and non-empty. Host-only, mints/revokes the per-run runtime keys. Get one at https://openrouter.ai/settings/management-keys — OpenRouter calls it a **Management API key**; `/settings/keys` makes *inference* keys instead. Both are `sk-or-v1-…`, so never diagnose the key by its prefix; `sbx manage doctor` calls the API to check.
   - If empty: `warn` — required only to mount a sandbox; fine to leave blank for read-and-observe.
 - `OPENROUTER_API_KEY` (optional): only for running ADWs locally via `just local` / `just adw`. Inside a sandbox it is overwritten by a minted, capped runtime key.
 - `ANTHROPIC_API_KEY` (optional): Claude Code on its own key.
@@ -69,15 +69,15 @@ Optional (only for a host-side orchestrator via `just local`; the VM image alrea
 
 - `.env` exists.
 - Rosters present: list `adws/adw_sssf_config/*.yaml` (expect five: default, deepestseek, frontier, open-weights, top-speed).
-- Model registry present: `sandbox_mount/guest/models.json.tmpl` exists and each model carries a full four-field `cost` block (a partial block drops the whole roster). `just sbx manage doctor` also asserts this.
-- Skills present: `.claude/skills/sssf/SKILL.md` and `.claude/skills/sssf-sandbox-orchestrator/SKILL.md`.
+- Model registry present: `sandbox_mount/guest/models.json.tmpl` exists and each model carries a full four-field `cost` block (a partial block drops the whole roster). `sbx manage doctor` also asserts this.
+- Skills present: `.claude/skills/sssf/SKILL.md`. The sandbox orchestrator skill ships with [sbx](https://github.com/jeffjacobsen/sbx), not this repo.
 
 ### Step 5 — Verify Readiness (never start anything)
 
 - Versions: `bun --version`, `uv --version`, `just --version`, `git --version`.
-- Namespaces resolve: `just --list inkwell adw sbx obs local` (each lists).
+- Namespaces resolve: `just --list inkwell adw obs local` (each lists). `sbx` is a separate command, not a namespace here.
 - App suite green: `just inkwell test` (30 tests — this exits, it does not serve).
-- sbx preflight (only if `OPENROUTER_PROVISIONING_KEY` is set and `ssh exe.dev` is reachable): `just sbx manage doctor` — the six-check host preflight, ends with `sbx doctor: OK`. If the key is blank, mark this `skipped (mount-only)`, not failed.
+- sbx preflight (only if [sbx](https://github.com/jeffjacobsen/sbx) is installed, `OPENROUTER_PROVISIONING_KEY` is set, and `ssh exe.dev` is reachable): `sbx manage doctor`, which ends with `sbx doctor: OK`. If sbx is absent or the key is blank, mark this `skipped (mount-only)`, not failed.
 
 ### Step 6 — Report
 
@@ -87,8 +87,8 @@ Print a status table with `ok` / `warn` / `skip` / `fail` for every check above,
 claude                 # then /prime to orient on all three tiers
 just inkwell run       # boot the app on :4501
 just inkwell test      # the 30-test suite the factory runs
-just sbx manage doctor # host preflight (needs the provisioning key)
-just sbx mount my-task # stand up a throwaway VM -> running factory (billable; your call)
+sbx manage doctor # host preflight (needs the provisioning key)
+sbx mount my-task # stand up a throwaway VM -> running factory (billable; your call)
 ```
 
 State plainly whether the setup is ready to **run the loop** (all mount prerequisites present) or ready to **read and observe** only (core toolchain present, mount credentials absent).

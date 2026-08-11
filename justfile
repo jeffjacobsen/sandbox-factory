@@ -24,11 +24,12 @@ config := env_var_or_default("SSSF_CONFIG", "adws/adw_sssf_config/sssf.config.ya
 # Two layers, deliberately separate:
 #   `mod adw`            — IN-sandbox execution. The ADWs themselves; identical
 #                          whether run here or on a VM that has this repo.
-#   `mod sbx`            — OUT-of-sandbox orchestration. Creates, fills, and
-#                          observes the VMs the ADWs run inside. It ships to the
-#                          sandbox like everything else; what a sandbox cannot do
-#                          is USE it, because the exe.dev account and the
-#                          OpenRouter provisioning key never leave the host.
+#   `sbx` (external)     — OUT-of-sandbox orchestration. Creates, fills, and
+#                          observes the VMs the ADWs run inside. It is a separate
+#                          tool installed once per machine, so it no longer ships
+#                          to the sandbox at all — and a sandbox could not use it
+#                          anyway, because the exe.dev account and the OpenRouter
+#                          provisioning key never leave the host.
 # A module namespaces its recipes and inherits nothing from this file — see the
 # header of just/adws.just for what that costs. An `import`, by contrast, shares
 # its parent module's scope and working directory, which is why the phase files
@@ -43,8 +44,14 @@ mod local 'just/local.just'
 # the ADWs themselves: just adw sdlc "..."
 mod adw 'just/adws.just'
 
-# sandbox orchestration: mount, execute, observe, tear down VMs
-mod sbx 'just/sandbox/mod.just'
+# Sandbox orchestration lives in its own tool now: https://github.com/jeffjacobsen/sbx
+# It is installed once per machine rather than copied into each repo, because
+# `reap` and `manage list` reason about a whole exe.dev + OpenRouter account —
+# a copy per repo gives you one partial view per repo and a key can hide in the
+# gap. What this repo keeps is sandbox.yaml, which describes only itself.
+#
+#   sbx mount my-task        (from this directory)
+#   sbx manage list
 
 # read the trace db: sessions, phases, tail, procs
 mod obs 'just/obs.just'

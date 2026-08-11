@@ -40,48 +40,20 @@ just/local.just       the `local` namespace: cc / pi / ipi, an orchestrator agen
                       FUNCTION, not a binary.
 just/obs.just         the `obs` namespace: sessions, phases, tail, procs, kill, rosters, ui.
                       Meant to work inside a sandbox too — reading your own traces is wanted there.
-just/sandbox/         the `sbx` namespace. HOST-ONLY: needs the exe.dev account and the
-                      provisioning key, neither of which reaches a sandbox.
-  mod.just            module entry: settings + the four submodules + imports mount.just.
-  mount.just          create -> fill -> setup -> observe. Never teardown.
-  lifecycle/          the six phases. `just sbx lifecycle <phase> <run-id>`.
-    mod.just          settings + imports the six phase files.
-    create.just       phase 1. Strict order: record -> VM -> key, so a crash always leaves
-                      teardown a handle.
-    fill.just         phase 2. Public git clone (no auth), the `sbx/<run-id>` run branch, then
-                      write .env with the runtime key.
-    setup.just        phase 3. push the base provisioner, then the gate (A builtin + declared).
-    execute.just      phase 4. Full SDLC inside the box, detached, returns a pid.
-    observe.just      phase 5. Start both servers, expose 4501 publicly, print both URLs.
-    teardown.just     phase 6. Harvests first, then revoke -> destroy -> close.
-  manage/             auxiliary: preflight, readback, fleet ops.
-    mod.just          settings + imports + the `doctor` preflight.
-    list.just         every run: state, VM alive, spend.
-    harvest.just      bundle the run branch off the VM into refs/sandbox/<run-id>.
-    reap.just         revoke orphaned sbx- keys. Dry run by default.
-  run/                put work in, or look inside.
-    mod.just          `run cmd` (inspect, synchronous) and `run agent` (resumable Claude Code
-                      session inside the box).
-  orch/               boot a host-side orchestrator agent.
-    mod.just          `orch cc` (Claude Code) and `orch pi`.
+just/                 sandbox orchestration MOVED OUT: it is https://github.com/jeffjacobsen/sbx
+                      now, installed once per machine rather than copied per repo, because
+                      `reap` and `manage list` reason about a whole exe.dev account. What
+                      this repo keeps is sandbox.yaml, which describes only itself.
+
 ```
 
 ## `sandbox_mount/` — what crosses the boundary
 
 ```
-host/run_record.py    the ONLY state shared across the six phases (each is a separate
-                      process). Without it teardown cannot know which key to revoke.
-host/manifest.py      the only reader of sandbox.yaml. `get` for single fields, `services`
-                      / `secrets` as TSV for the loops in OBSERVE and FILL, `check` for
-                      doctor. NOT stdlib-only (YAML isn't in the stdlib) — which is fine
-                      only because nothing on the TEARDOWN path reads it, so a broken
-                      manifest can never strand a live key.
-host/runs_table.py    renders `just sbx manage list`. A file, not embedded, because an unindented
-                      line inside a just recipe body TERMINATES the recipe.
-host/base_provision.sh  the provisioner the ORCHESTRATOR owns and PUSHES (scp) every mount.
-                      Installs provision.toolchain from CDNs (never apt), symlinks bun into
-                      /usr/local/bin for non-interactive ssh, runs the optional project hook,
-                      and owns /tmp/PROVISION_READY as its literal last line.
+host/                 MOVED to https://github.com/jeffjacobsen/sbx — run_record.py,
+                      manifest.py, runs_table.py and base_provision.sh belong to the
+                      orchestrator, which is installed once per machine.
+
 guest/provision.sh    THIS repo's optional project hook, run INSIDE the VM by the base.
                       Writes models.json, builds the UI, inits the trace db. Does NOT touch
                       the sentinel — the base does, after this returns.
@@ -144,7 +116,7 @@ specs/sandbox-mount-system.html   THE PLAN, and the working checklist. Live chec
 ai_docs/exedev_sandbox_mounting.md   every exe.dev fact, measured on live VMs. Several
                       obvious designs were killed by these measurements. Do not re-derive.
 prompts/              five ready-made tasks to point the factory at (01-05), usable verbatim:
-                      `just sbx lifecycle execute <id> "$(cat prompts/01-fts5-search.md)"`.
+                      `sbx lifecycle execute <id> "$(cat prompts/01-fts5-search.md)"`.
 specs/*.md            plans the factory itself wrote on earlier runs.
 app_docs/             write-ups the factory produced after those runs.
 images/               diagrams used by the README.

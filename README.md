@@ -9,7 +9,7 @@
   <img src="images/09_factory_in_a_box.png" alt="Three nested tiers: the Inkwell app inside the factory inside a throwaway exe.dev VM, mounted and watched from the host" width="850">
 </p>
 
-Three tiers nest here: **Inkwell** (a minimalist blog-writing app), the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (deterministic Python owns the graph, coding agents are bounded phases inside it), and the **sandbox mount system** (six host-side phases that stand the other two up on a disposable VM in about 10 seconds). The app is the payload. **The point is the loop that ships it without you in the middle.**
+Three tiers nest here: **Inkwell** (a minimalist blog-writing app), the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (deterministic Python owns the graph, coding agents are bounded phases inside it), and **[sbx](https://github.com/jeffjacobsen/sbx)** (a separate tool, installed once per machine, that stands the other two up on a disposable VM in about 10 seconds). The app is the payload. **The point is the loop that ships it without you in the middle.**
 
 You can get value from this repo two ways, and both are first-class:
 
@@ -32,11 +32,11 @@ claude               # boot Claude Code in the repo root
 /prime               # orient on all three tiers (out-loop orchestrator, in-loop orchestrator, software factory), check live state
 ```
 
-`/install` and `/prime` live in `.claude/commands/`. `/install` checks the toolchain, installs app deps, verifies `.env`, and runs the `just sbx manage doctor` preflight without starting anything. `/prime` then walks the agent through the command surface, the specs, and the measured gotchas.
+`/install` and `/prime` live in `.claude/commands/`. `/install` checks the toolchain, installs app deps, verifies `.env`, and runs the `sbx manage doctor` preflight without starting anything. `/prime` then walks the agent through the command surface, the specs, and the measured gotchas.
 
 Once oriented, you operate the whole system by talking to the agent. Two skills carry the knowledge, so you describe intent and the agent runs the right recipes:
 
-- **`/sssf-sandbox-orchestrator`** drives the out-of-sandbox loop from plain English: mount a box, put work in, watch it, fan out best-of-N, harvest the XYZ sandbox, tear down. Thin skill, fat recipes: every action it takes is a `just sbx` command you could type yourself.
+- **`/sbx-orchestrator` (ships with [sbx](https://github.com/jeffjacobsen/sbx))** drives the out-of-sandbox loop from plain English: mount a box, put work in, watch it, fan out best-of-N, harvest the XYZ sandbox, tear down. Thin skill, fat recipes: every action it takes is a `just sbx` command you could type yourself.
 - **`/sssf`** drives the factory from inside a box: create, run, and observe the ADWs, and manage the agent roster.
 
 ### Manual Install
@@ -44,7 +44,7 @@ Once oriented, you operate the whole system by talking to the agent. Two skills 
 ```bash
 cp .env.sample .env                  # add OPENROUTER_PROVISIONING_KEY (host-only, never leaves)
 cd apps/inkwell && bun install       # app deps
-just sbx manage doctor               # six-check preflight: ssh, key, helpers, rates, adw layer
+sbx manage doctor               # six-check preflight: ssh, key, helpers, rates, adw layer
 just inkwell test                    # 30 tests green = the payload works
 ```
 
@@ -62,7 +62,7 @@ Every resource this system leans on, what it does, and whether you actually need
 | [OpenRouter provisioning key](https://openrouter.ai/settings/management-keys) | mints and revokes the per-run inference keys | required to mount | not needed |
 | [Claude Code](https://claude.com/claude-code) + [Pi](https://github.com/badlogic/pi-mono) | the coding agents that do the work | preinstalled on the VM | not needed |
 
-> **Naming:** OpenRouter calls the provisioning key a **Management API key** and mints it at [`/settings/management-keys`](https://openrouter.ai/settings/management-keys). The ordinary [`/settings/keys`](https://openrouter.ai/settings/keys) page makes *inference* keys. Both look like `sk-or-v1-…`, so the prefix will not tell you which you have — `just sbx manage doctor` asks OpenRouter and tells you before a VM exists.
+> **Naming:** OpenRouter calls the provisioning key a **Management API key** and mints it at [`/settings/management-keys`](https://openrouter.ai/settings/management-keys). The ordinary [`/settings/keys`](https://openrouter.ai/settings/keys) page makes *inference* keys. Both look like `sk-or-v1-…`, so the prefix will not tell you which you have — `sbx manage doctor` asks OpenRouter and tells you before a VM exists.
 
 Two credentials are the entire reason the sandbox is safe: the **exe.dev account** and the **OpenRouter provisioning key** live only on your host. Everything else is a fast, free toolchain install. If you only want to understand the design, clone the repo and read: no account, no key, nothing to spend.
 
@@ -99,20 +99,20 @@ Three command tiers, and each one commands only the tier inside it:
 | **ADW agents** | bounded phases inside the factory | scout, plan, build, review, document |
 
 <p align="center">
-  <img src="images/12_tier_command_surface.png" alt="Each tier has one command surface: just sbx mount/execute/teardown, then just adw sdlc, then the agent phases" width="780">
+  <img src="images/12_tier_command_surface.png" alt="Each tier has one command surface: sbx mount/execute/teardown, then just adw sdlc, then the agent phases" width="780">
 </p>
 
 Work crosses the boundary on one of two paths, and the difference is who pulls the trigger inside:
 
 | Path | Verb | Mechanism |
 | --- | --- | --- |
-| **Direct** | a command | `just sbx lifecycle execute` detaches the factory process itself: reproducible, pid-tracked, zero orchestration tokens |
-| **Agent-mediated** | a delegation | `just sbx run agent` briefs the in-sandbox orchestrator, and *it* launches the factory: judgment at the kickoff, conversational, resumable |
+| **Direct** | a command | `sbx lifecycle execute` detaches the factory process itself: reproducible, pid-tracked, zero orchestration tokens |
+| **Agent-mediated** | a delegation | `sbx run agent` briefs the in-sandbox orchestrator, and *it* launches the factory: judgment at the kickoff, conversational, resumable |
 
 Every delegation opens with the equip line, so the in-box agent routes instead of improvising:
 
 ```bash
-just sbx run agent <id> "If you have not already: READ and EXECUTE .claude/skills/sssf/SKILL.md. Then: <work>"
+sbx run agent <id> "If you have not already: READ and EXECUTE .claude/skills/sssf/SKILL.md. Then: <work>"
 ```
 
 <p align="center">
@@ -184,32 +184,32 @@ The main flow, top to bottom. Every command is a `just` recipe you could type by
 ```bash
 # 0. one-time: credentials + preflight
 cp .env.sample .env               # add OPENROUTER_PROVISIONING_KEY (host-only)
-just sbx manage doctor            # must end with: sbx doctor: OK
+sbx manage doctor            # must end with: sbx doctor: OK
 
 # 1. mount a throwaway VM into a running factory (~10s)
-just sbx mount my-feature         # prints the resolved run id and two URLs
+sbx mount my-feature         # prints the resolved run id and two URLs
 
 # 2. put work in (pick one path)
-just sbx lifecycle execute <run-id> "add a word-count badge to the editor footer"   # direct, detached
-just sbx run agent       <run-id> "READ and EXECUTE .claude/skills/sssf/SKILL.md. Then: <work>"  # delegated
+sbx lifecycle execute <run-id> "add a word-count badge to the editor footer"   # direct, detached
+sbx run agent       <run-id> "READ and EXECUTE .claude/skills/sssf/SKILL.md. Then: <work>"  # delegated
 
 # 3. watch from outside
-just sbx manage list              # every run: state, VM alive, spend
+sbx manage list              # every run: state, VM alive, spend
 just obs sessions                 # the ADW runs inside your boxes
 just obs tail <adw_id>            # live event stream for one run
 
 # 4. bring the commits home (safe, non-destructive, run any time)
-just sbx manage harvest <run-id>  # commits land in refs/sandbox/<run-id>
+sbx manage harvest <run-id>  # commits land in refs/sandbox/<run-id>
 
 # 5. tear it down (always an explicit human decision)
-just sbx lifecycle teardown <run-id>
+sbx lifecycle teardown <run-id>
 ```
 
-Or just ask. With `/sssf-sandbox-orchestrator` loaded, the same flow runs conversationally: "mount a sandbox and add a word-count badge," "spin up three and give me best-of-N," "harvest the winner." The skill picks the recipes; the typed `just` commands above stay the deterministic ground truth underneath.
+Or just ask. With `/sbx-orchestrator` (ships with [sbx](https://github.com/jeffjacobsen/sbx)) loaded, the same flow runs conversationally: "mount a sandbox and add a word-count badge," "spin up three and give me best-of-N," "harvest the winner." The skill picks the recipes; the typed `just` commands above stay the deterministic ground truth underneath.
 
-Two handles, do not confuse them: **`<run-id>`** names the sandbox (it is also the VM name and the public hostname), while **`<adw_id>`** names one factory run inside that box. `just sbx manage list` counts sandboxes; `just obs sessions` counts the runs within them. A single box can host many ADW runs.
+Two handles, do not confuse them: **`<run-id>`** names the sandbox (it is also the VM name and the public hostname), while **`<adw_id>`** names one factory run inside that box. `sbx manage list` counts sandboxes; `just obs sessions` counts the runs within them. A single box can host many ADW runs.
 
-`just sbx mount` stops at `observe` on purpose: nothing chains into teardown, because a destroyed VM is the evidence and the artifacts, gone. Harvest is the exception you can run freely, because it only reads the box and only writes `refs/sandbox/`.
+`sbx mount` stops at `observe` on purpose: nothing chains into teardown, because a destroyed VM is the evidence and the artifacts, gone. Harvest is the exception you can run freely, because it only reads the box and only writes `refs/sandbox/`.
 
 ---
 
@@ -237,7 +237,7 @@ Each sandbox exposes two ports: the app is public, the agent view stays auth-gat
 just obs ui                 # boot the observability UI
 just obs sessions           # recent runs
 just obs tail <adw_id>      # live event tail
-just sbx manage list        # every sandbox: state, VM alive, spend
+sbx manage list        # every sandbox: state, VM alive, spend
 ```
 
 ---
@@ -256,10 +256,10 @@ justfile
 ```
 
 ```bash
-just sbx mount my-feature                                  # blank VM → running factory, ~10s
-just sbx run cmd <id> 'tail -f run.log'                    # look inside, synchronously
-just sbx manage harvest <id>                               # commits home → refs/sandbox/<id>
-just sbx lifecycle teardown <id>                           # human decision, always
+sbx mount my-feature                                  # blank VM → running factory, ~10s
+sbx run cmd <id> 'tail -f run.log'                    # look inside, synchronously
+sbx manage harvest <id>                               # commits home → refs/sandbox/<id>
+sbx lifecycle teardown <id>                           # human decision, always
 ```
 
 `TREE.md` is the file-by-file map of the whole repo, grouped by tier, if you want the full territory.
