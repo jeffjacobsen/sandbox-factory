@@ -5,7 +5,7 @@ built, tested and committed a SQLite FTS5 full-text search feature into a Bun ap
 running on a disposable VM, and the human in the loop typed six commands.
 
 This is the whole run, verbatim — including the two defects the machinery caught
-before they could waste a phase, and the one that is still open.
+before they could waste a phase, and how both were fixed at the source.
 
 | | |
 |---|---|
