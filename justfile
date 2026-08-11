@@ -36,7 +36,6 @@ config := env_var_or_default("SSSF_CONFIG", "adws/adw_sssf_config/sssf.config.ya
 # under just/sandbox/ are imports and carry no `set` lines of their own.
 
 # boot and test the Inkwell app itself
-mod inkwell 'just/inkwell.just'
 
 # boot an orchestrator agent that works on THIS machine
 mod local 'just/local.just'

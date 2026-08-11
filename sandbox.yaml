@@ -88,24 +88,20 @@ health:
 # a property of the one port the proxy targets, not of the VM, so a second one
 # is not a stricter setting, it is a contradiction.
 services:
-  app:
-    dir: apps/inkwell
-    cmd: bun run server.ts
-    port: 4501
-    public: true          # the anonymous one: https://<vm>.exe.xyz/
+  # The app service left with the app: Inkwell lives at
+  # https://github.com/jeffjacobsen/inkwell and carries its own sandbox.yaml.
+  # What is mountable HERE is the factory and its trace UI, so the UI is the
+  # public one — exactly one service may be, and it is the only one left.
   obs:
     dir: .claude/skills/sssf/apps/visualizer
     cmd: bun run server/index.ts
     port: 4600
-    public: false         # reachable, but auth-gated to users with VM access
+    public: true
     # Checked before the start attempt: the visualizer EXITS when the trace db
-    # is missing, and `just sbx mount` ends at observe BEFORE any ADW has run.
-    # Without this the failure looks like a dead port instead of a missing file.
+    # is missing, and a mount ends at observe BEFORE any ADW has run. Without
+    # this the failure looks like a dead port instead of a missing file.
     requires:
       - adws/adw_data/sssf.db
-    # Resolves against the server's cwd, which is the service dir — so it has to
-    # be absolute. The host emits it with {app} expanded to the literal
-    # `$HOME/app` and lets the remote shell resolve $HOME.
     env:
       SSSF_DB: "{app}/adws/adw_data/sssf.db"
 

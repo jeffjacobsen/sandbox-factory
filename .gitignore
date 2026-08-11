@@ -152,9 +152,6 @@ adws/adw_data/sessions/
 # of which would have stamped a fake trace db into every target repo.
 sssf.db*
 
-# inkwell
-apps/inkwell/inkwell.db*
-
 *.mov
 
 # sandbox mount: the run store moved to ~/.local/state/sbx/runs so a live runtime

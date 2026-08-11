@@ -36,56 +36,14 @@ observability:
   db: adws/adw_data/sssf.db        # tracer writes here directly; the UI polls it
   poll_ms: 500                     # visualizer live-poll cadence
 
-# ── Deterministic quality: commands as DATA ──────────────────────────────────
-# This block is the customisation surface for lint/typecheck/build/test. The
-# alternative was tried in this repo and lost: quality.py shipped generic, this
-# repo customised it by EDITING the stamped file — hardcoded app paths, and
-# `run_tests` renamed to `run_inkwell_tests`. Three ADWs kept calling the old
-# name and died at the TAIL of their chains, after the planner and builder had
-# spent, ~$0.96 in. The function names in adw_modules/quality.py are permanent
-# now; everything project-specific is here.
-#
-# argv LISTS, not shell strings: no quoting to get wrong and no shell to inject
-# into. BARE binary names, not absolute paths: an ADW inherits the operator's
-# environment, so `bun` resolves off PATH exactly as it does in their shell, and
-# an absolute path would bake one machine's layout into every trace.
-#
-# {output_dir} is resolved per run, under the session's handoff dir, so a build's
-# artifacts travel with the run that produced them.
-quality:
-  # What `run_tests` runs. Empty means this project has no suite, and the ADWs
-  # that gate on tests say so rather than inventing a command.
-  test: ["bun", "test", "apps/inkwell/server.test.ts"]
+# ── Deterministic quality:
+  # EMPTY ON PURPOSE. The app this factory was built around moved to
+  # https://github.com/jeffjacobsen/inkwell, which carries its own filled-in
+  # block. This repo is the factory itself and has no suite of its own, so the
+  # ADWs that gate on tests will say so rather than run someone else's commands.
+  test: []
   test_timeout_seconds: 600
-
-  # What `run_quality` runs, in order. name/area/operation are trace labels.
-  checks:
-    - name: frontend_lint
-      area: frontend
-      operation: lint
-      argv: ["bun", "x", "oxlint@1.36.0", "apps/inkwell/public/app.js"]
-    - name: backend_lint
-      area: backend
-      operation: lint
-      argv: ["bun", "x", "oxlint@1.36.0", "apps/inkwell/server.ts"]
-    # "typecheck" is the strongest zero-config Bun-native syntax/import check
-    # available for these sources; the app has no local package toolchain.
-    - name: frontend_typecheck
-      area: frontend
-      operation: typecheck
-      argv: ["bun", "build", "--target=browser", "apps/inkwell/public/app.js", "--outdir", "{output_dir}"]
-    - name: backend_typecheck
-      area: backend
-      operation: typecheck
-      argv: ["bun", "build", "--target=bun", "apps/inkwell/server.ts", "--outdir", "{output_dir}"]
-    - name: frontend_build
-      area: frontend
-      operation: build
-      argv: ["bun", "build", "--target=browser", "--minify", "apps/inkwell/public/app.js", "--outdir", "{output_dir}"]
-    - name: backend_build
-      area: backend
-      operation: build
-      argv: ["bun", "build", "--target=bun", "--minify", "apps/inkwell/server.ts", "--outdir", "{output_dir}"]
+  checks: []
 
 agents:
   - name: planner

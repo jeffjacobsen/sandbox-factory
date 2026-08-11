@@ -84,25 +84,20 @@ adws/adw_data/        runtime: sessions/, prompt_engineering/, harness_engineeri
                       sssf.db. NEVER edit sessions/ — it is the run record.
 ```
 
-## `apps/inkwell/` — the app
+## The app moved out
 
-```
-server.ts             Bun + bun:sqlite, zero dependencies. Port 4501.
-server.test.ts        30 tests. `bun test apps/inkwell/server.test.ts` is what the factory's
-                      test phase runs, by name, as code rather than an agent decision.
-public/               vanilla JS front end: app.js, index.html, style.css.
-```
+Inkwell — the example payload this whole system was built around — now lives at
+https://github.com/jeffjacobsen/inkwell with the factory stamped into it and its own
+sandbox.yaml. The demo target is a URL, not a directory: FILL clones over public HTTPS,
+so the app does not have to sit inside the factory's repo to be worked on by it. Its
+prompts, specs and app_docs went with it.
 
-## `.claude/skills/` — the three skills
+## `.claude/skills/` — the factory skill
 
 ```
 sssf/                 the factory skill: SKILL.md, 9 cookbooks, 3 references, and
                       apps/visualizer/ (the observability UI: Bun server + Vue, polls
                       sssf.db, serves dist/ when built). Portable — it stamps other repos.
-sssf-sandbox-orchestrator/  HOST-ONLY skill that drives the six phases. SKILL.md, 7
-                      cookbooks (just_command_model is the load-bearing one), 4 references
-                      (gotchas.md is every measured trap).
-sandbox-exe-dev/      exe.dev VM control: SKILL.md + a vendored `exedev` CLI. Also host-only.
 commands/prime.md     `/prime` — boots a net-new agent on this whole system.
 ```
 
@@ -113,13 +108,14 @@ specs/sandbox-mount-system.html   THE PLAN, and the working checklist. Live chec
                       what was verified ON HARDWARE. An unchecked box means "not proven",
                       not "not written". Opens in a browser. Read the "Where this stands"
                       section first.
-ai_docs/exedev_sandbox_mounting.md   every exe.dev fact, measured on live VMs. Several
-                      obvious designs were killed by these measurements. Do not re-derive.
-prompts/              five ready-made tasks to point the factory at (01-05), usable verbatim:
-                      `sbx lifecycle execute <id> "$(cat prompts/01-fts5-search.md)"`.
-specs/*.md            plans the factory itself wrote on earlier runs.
-app_docs/             write-ups the factory produced after those runs.
+specs/*.md            plans the factory itself wrote on earlier runs, about the factory —
+                      the ones about Inkwell went with the app.
+specs/scaffold.md     the build map for the sssf standalone repo.
 images/               diagrams used by the README.
+
+The exe.dev knowledge (ai_docs/exedev_sandbox_mounting.md), the task prompts, and the
+orchestrator and exe.dev skills all moved out: to https://github.com/jeffjacobsen/sbx
+and https://github.com/jeffjacobsen/inkwell respectively.
 ```
 
 ---
