@@ -286,7 +286,13 @@ MIT — see [`LICENSE`](LICENSE).
 
 ---
 
-## Master Agentic Coding
+## Credits
+
+This project is built on [inkwell-agent-sandboxes-and-software-factory](https://github.com/disler/inkwell-agent-sandboxes-and-software-factory) by **IndyDevDan** ([@disler](https://github.com/disler)) — the original repo, and the source of the three-tier design, the ADW model, and the sandbox mount system this repo grew from.
+
+---
+
+## Tactical Agentic Coding by IndyDevDan
 
 Want to a clear hands on guide to building your software factory?
 
