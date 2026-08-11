@@ -50,7 +50,7 @@ just/sandbox/         the `sbx` namespace. HOST-ONLY: needs the exe.dev account 
                       teardown a handle.
     fill.just         phase 2. Public git clone (no auth), the `sbx/<run-id>` run branch, then
                       write .env with the runtime key.
-    setup.just        phase 3. provision.sh, then the FIVE-assertion gate.
+    setup.just        phase 3. push the base provisioner, then the FIVE-assertion gate.
     execute.just      phase 4. Full SDLC inside the box, detached, returns a pid.
     observe.just      phase 5. Start both servers, expose 4501 publicly, print both URLs.
     teardown.just     phase 6. Harvests first, then revoke -> destroy -> close.
@@ -78,7 +78,7 @@ host/manifest.py      the only reader of sandbox.yaml. `get` for single fields, 
                       manifest can never strand a live key.
 host/runs_table.py    renders `just sbx manage list`. A file, not embedded, because an unindented
                       line inside a just recipe body TERMINATES the recipe.
-guest/provision.sh    runs INSIDE the VM: installs bun + just from CDNs
+guest/provision.sh    THIS repo's optional project hook, run INSIDE the VM by the base
                       (never apt), writes models.json, builds the UI, inits the trace db,
                       touches the sentinel last.
 guest/models.json.tmpl  10 models, each with a FOUR-field cost block. A partial block fails

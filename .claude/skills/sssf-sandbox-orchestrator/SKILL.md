@@ -39,8 +39,9 @@ just sbx manage doctor
 
 It checks everything in one pass: `ssh exe.dev` reachable, a trusted host key to verify VMs with,
 `OPENROUTER_PROVISIONING_KEY` set (never printed) **and confirmed to be a management key rather than
-an inference key**, the run-record helper runs, `sandbox.yaml` validates, the provisioner it names is
-executable, the models template carries full four-field rate blocks, and the `adw` layer resolves.
+an inference key**, the run-record helper runs and its store is writable, `sandbox.yaml` validates,
+the base provisioner is present, the models template carries full four-field rate blocks, and the
+`adw` layer resolves.
 Green ends with `sbx doctor: OK`.
 
 Two things it does **not** cover, so check them yourself:
@@ -77,10 +78,19 @@ beside its record. Records from before the move still work where they are and ar
 
 ### `sandbox.yaml` — which repo, not how to mount one
 
-The phases carry no project constants. The clone URL, the provision script, the secret files, the
-services and their ports, and the kickoff command all come from `sandbox.yaml` at the repo root, read
-by `sandbox_mount/host/manifest.py`. **If a mount is doing the wrong thing for this project, the fix
-is usually one line there — not in a recipe.** Two rules it enforces, both from measurements: ports
+The phases carry no project constants. The clone URL, the toolchain, the optional project hook, the
+secret files, the services and their ports, and the kickoff command all come from `sandbox.yaml` at
+the repo root, read by `sandbox_mount/host/manifest.py`. **If a mount is doing the wrong thing for
+this project, the fix is usually one line there — not in a recipe.**
+
+**The provisioner is PUSHED, not cloned.** SETUP `scp`s `sandbox_mount/host/base_provision.sh` — the
+orchestrator's own file — and it installs `provision.toolchain` (`bun`, `just`, `uv`; never apt) and
+then runs `provision.script` if the repo declares one. Both are optional, so a repo that has never
+heard of this system mounts with zero files added. The base owns `/tmp/PROVISION_READY` and writes it
+after the hook returns; a hook must never touch it. Anything a project needs beyond those three tools
+belongs in its hook, not in a fourth installer.
+
+Two rules the manifest enforces, both from measurements: ports
 must be in 3000-9999 (what the proxy forwards) and **exactly one** service may be `public: true`
 (public is a property of the one port the proxy targets, so a second is a contradiction, not a
 stricter setting). `just sbx manage doctor` validates it before a VM exists.
@@ -116,7 +126,7 @@ their own contents when run bare.
 | `just sbx mount RUN_ID [--limit N]` | create → fill → setup → observe. **Never teardown.** Prints the resolved run id and both URLs. |
 | `just sbx lifecycle create RUN_ID [--limit N]` | mint `sbx-<run-id>` (\$50 default) + boot the VM, in record → VM → key order |
 | `just sbx lifecycle fill RUN_ID [SHA]` | public `git clone` (2.61s, no auth), optional SHA pin, write `.env` with the runtime key |
-| `just sbx lifecycle setup RUN_ID` | `provision.sh` + the five-assertion gate |
+| `just sbx lifecycle setup RUN_ID` | scp the base provisioner, run it (toolchain + optional hook), then the five-assertion gate |
 | `just sbx lifecycle execute RUN_ID "PROMPT"` | full SDLC detached inside the box; returns a pid, records it |
 | `just sbx run cmd RUN_ID '<cmd>'` | generic escape hatch, synchronous, runs in `app/`. Your inspection tool. |
 | `just sbx run agent RUN_ID "PROMPT"` | Claude Code inside the box, resumable session — hand off, then keep talking |

@@ -55,7 +55,10 @@ doctor:
     # rule it enforces (DNS-safe name, ports in the proxy's range, exactly one
     # public service) is a failure that otherwise shows up on live hardware.
     chk "sandbox.yaml valid"               'sandbox_mount/host/manifest.py check'
-    chk "provisioner present"              '[ -x "$(sandbox_mount/host/manifest.py get provision.script)" ]'
+    # The base is OURS and is pushed every mount, so its absence breaks every
+    # repo, not just this one. The hook is the target repo's and is optional —
+    # `manifest.py check` already rejects a declared script that is not there.
+    chk "base provisioner present"         '[ -r sandbox_mount/host/base_provision.sh ]'
     chk "models template has rates"        'python3 -c "import json;m=json.load(open(\"sandbox_mount/guest/models.json.tmpl\"))[\"providers\"][\"openrouter\"][\"models\"];assert all(set(x[\"cost\"])=={\"input\",\"output\",\"cacheRead\",\"cacheWrite\"} for x in m)"'
     chk "adw layer resolves"               'just --list adw'
     case "$KEYCODE" in

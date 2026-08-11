@@ -34,9 +34,16 @@ name: sandbox-factory
 repo: https://github.com/jeffjacobsen/sandbox-factory.git
 
 provision:
-  # Runs inside the VM after the clone, streamed live by SETUP. Repo-relative.
-  # Today the host requires this file to exist in the clone; a later step pushes
-  # a base provisioner and makes this an optional project hook.
+  # What the PUSHED base provisioner installs from CDNs before the hook runs.
+  # Supported: bun, just, uv — the set whose install path is measured. uv, python3,
+  # jq, pi and claude already ship in the exeuntu image, so they are not listed.
+  # Never apt: ~148 kB/s and ~35s per package from the dal region.
+  toolchain: [bun, just]
+
+  # OPTIONAL project hook, run inside the VM by the base after the toolchain is
+  # in place, streamed live by SETUP. Repo-relative. A repo that needs nothing
+  # beyond the toolchain omits this and still mounts — the host no longer
+  # requires a provisioner to exist in the clone.
   script: sandbox_mount/guest/provision.sh
 
 # Files FILL writes into the clone. Each `vars` value is a template; the host

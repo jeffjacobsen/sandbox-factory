@@ -107,13 +107,19 @@ that *are* the run's output.
 just sbx lifecycle setup <run-id>
 ```
 
-Runs `bash app/sandbox_mount/guest/provision.sh` over ssh with its output streaming, then polls for
-`/tmp/PROVISION_READY` (the script's literal last line — there is no other reliable completion
-signal), then gates.
+`scp`s `sandbox_mount/host/base_provision.sh` — **the orchestrator's own file, not one from the
+clone** — to `/tmp/sbx_base_provision.sh`, runs it over ssh with its output streaming, then polls for
+`/tmp/PROVISION_READY` (the base's literal last line — there is no other reliable completion signal),
+then gates.
 
-provision does, in order: bun → just → write
-`~/.pi/agent/models.json` → `bun install` → `bunx vite build` the visualizer → initialize the trace
-db → warm the uv cache → touch the sentinel.
+The base does, in order: install `provision.toolchain` from CDNs (`bun`, `just`, `uv`; skip-if-present) →
+symlink bun into `/usr/local/bin` → run `provision.script` if the repo declares one → touch the sentinel.
+
+**Both manifest fields are optional**, which is what makes a repo that has never heard of this system
+mountable with zero files added. This repo's hook (`sandbox_mount/guest/provision.sh`) does the factory
+half: write `~/.pi/agent/models.json` → `bun install` → `bunx vite build` the visualizer → initialize
+the trace db → warm the uv cache. It must never touch the sentinel — the base owns that, and writes it
+only after the hook returns.
 
 The five assertions:
 

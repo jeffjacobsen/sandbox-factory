@@ -33,11 +33,18 @@ setup RUN_ID CONFIG="":
     VM=$("$RR" get {{RUN_ID}} vm_name)
     SHA=$("$RR" get {{RUN_ID}} commit_sha)
 
-    # WHICH script provisions the box is the target repo's answer; running it and
-    # gating the result is ours. Gates A-E below are still host code — they move
-    # into the manifest in a later step, and until they do this file owns them.
+    # The provisioner is PUSHED, not required in the clone. SETUP used to run
+    # `bash app/sandbox_mount/guest/provision.sh` — a host phase depending on a
+    # file inside the cloned repo, which is why this system could only mount
+    # repos that already carried it. Now the host scp's a base provisioner it
+    # owns; the manifest says only which tools to install and which optional
+    # project hook to run after. Both may be empty: a repo that declares neither
+    # still mounts. Gates A-E below are still host code — they move into the
+    # manifest in a later step, and until they do this file owns them.
+    BASE="sandbox_mount/host/base_provision.sh"
+    [ -f "$BASE" ] || { echo "[setup] missing ${BASE} — the orchestrator's own provisioner" >&2; exit 1; }
+    TOOLCHAIN=$("$MF" toolchain)
     PROV=$("$MF" get provision.script)
-    [ -n "$PROV" ] || { echo "[setup] sandbox.yaml declares no provision.script — run: $MF check" >&2; exit 1; }
 
     # run_record prints an empty line for an unset field, so emptiness is the
     # real check — a missing vm_name means CREATE never finished.
@@ -67,15 +74,23 @@ setup RUN_ID CONFIG="":
     # ── 1. provision ─────────────────────────────────────────────────────────
     # Clear the sentinel first: re-running setup on the same VM would otherwise
     # find the PREVIOUS run's sentinel and declare victory before provision ran.
-    echo "[setup] 1/3 provisioning (streaming ${PROV} output)"
+    echo "[setup] 1/3 provisioning (toolchain: ${TOOLCHAIN:-none}, hook: ${PROV:-none})"
     "${SSH[@]}" 'rm -f /tmp/PROVISION_READY' < /dev/null \
       || gate_fail "cannot reach ${HOST} over ssh"
+    # Pushed every run, never cached: the base provisioner is the orchestrator's
+    # code, so the box must run THIS version of it, not whatever a previous mount
+    # or a golden-VM snapshot left in /tmp.
+    scp -q -o ConnectTimeout=15 "$BASE" "${HOST}:/tmp/sbx_base_provision.sh" < /dev/null \
+      || gate_fail "could not copy ${BASE} to ${HOST}"
     # < /dev/null so ssh does not swallow this script's stdin; output streams live.
-    "${SSH[@]}" "bash app/${PROV}" < /dev/null \
-      || gate_fail "${PROV} exited non-zero (its last '── step ──' line names the stage)"
+    # Both arguments are quoted even when empty: an unquoted empty TOOLCHAIN would
+    # shift the hook into its place and the base would try to install it.
+    "${SSH[@]}" "bash /tmp/sbx_base_provision.sh \"\$HOME/app\" '${TOOLCHAIN}' '${PROV}'" < /dev/null \
+      || gate_fail "provisioning exited non-zero (its last '── step ──' line names the stage)"
 
     # ── 2. sentinel ──────────────────────────────────────────────────────────
-    # provision.sh touches /tmp/PROVISION_READY as its literal last line, so on
+    # the base provisioner touches /tmp/PROVISION_READY as its literal last line
+    # — after the project hook has returned, so on
     # this synchronous path the file is already there and the loop exits on the
     # first probe. The poll is bounded anyway: it is the only completion signal
     # that stays correct if provision is ever backgrounded, and an unbounded

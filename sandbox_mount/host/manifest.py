@@ -14,6 +14,7 @@ Usage:
     manifest.py check
     manifest.py services
     manifest.py secrets
+    manifest.py toolchain
     manifest.py ports-json
     manifest.py show
     manifest.py path
@@ -62,6 +63,12 @@ NAME_MAX = 32
 NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 SERVICE_FIELDS = {"dir", "cmd", "port", "public", "requires", "env"}
+
+# What the pushed base provisioner knows how to install, from a CDN, in about a
+# second each. Kept small on purpose: this is the set whose install path has
+# actually been measured here, and the answer to "please add cargo" is a project
+# hook, not a fourth installer -- never apt, at ~35s per package from dal.
+TOOLCHAIN = ("bun", "just", "uv")
 
 EMPTY = "-"  # TSV placeholder: `read` drops trailing empty fields, a dash survives
 
@@ -132,11 +139,32 @@ def problems(data: dict) -> list[str]:
     if not isinstance(repo, str) or not repo:
         out.append("repo is required — FILL clones it")
 
+    # OPTIONAL, both of them. The base provisioner is pushed by the host, so a
+    # repo that declares neither still mounts -- it just gets the image's own
+    # toolchain and no project step. That is the point of pushing rather than
+    # requiring a provisioner in the clone.
+    tools = dig(data, "provision.toolchain")
+    if tools is not None:
+        if not isinstance(tools, list) or any(not isinstance(t, str) for t in tools):
+            out.append("provision.toolchain must be a list of tool names")
+        else:
+            unknown = [t for t in tools if t not in TOOLCHAIN]
+            if unknown:
+                out.append(
+                    f"provision.toolchain has unsupported entr{'y' if len(unknown) == 1 else 'ies'}: "
+                    f"{', '.join(unknown)}. The base provisioner installs {', '.join(TOOLCHAIN)}; "
+                    "anything else belongs in provision.script"
+                )
+
     script = dig(data, "provision.script")
     if script is not None:
         if not isinstance(script, str):
             out.append("provision.script must be a path string")
         elif not (REPO_ROOT / script).is_file():
+            # Checks THIS checkout, which is right while a repo mounts itself.
+            # The base provisioner re-checks it inside the clone and fails loudly
+            # there, so a manifest describing a different repo is caught on the
+            # VM rather than passing silently.
             out.append(f"provision.script {script!r} does not exist in this repo")
 
     secrets = data.get("secrets") or []
@@ -274,6 +302,18 @@ def cmd_secrets(data: dict) -> int:
     return 0
 
 
+def cmd_toolchain(data: dict) -> int:
+    """Comma-separated, on ONE line — the shape the base provisioner takes.
+
+    One argument rather than a list because it crosses `ssh vm 'bash script a b c'`,
+    where a multi-word argument would have to survive two levels of shell quoting.
+    Tool names are single words from a closed set, so a comma join is lossless.
+    """
+    tools = dig(data, "provision.toolchain") or []
+    print(",".join(t for t in tools if isinstance(t, str)))
+    return 0
+
+
 def cmd_ports_json(data: dict) -> int:
     """The `ports` field of the run record, built from the same source of truth.
 
@@ -321,6 +361,8 @@ def main(argv: list[str]) -> int:
         return cmd_services(data)
     if cmd == "secrets":
         return cmd_secrets(data)
+    if cmd == "toolchain":
+        return cmd_toolchain(data)
     if cmd == "ports-json":
         return cmd_ports_json(data)
     if cmd == "show":
