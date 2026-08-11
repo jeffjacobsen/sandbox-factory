@@ -57,7 +57,11 @@ execute RUN_ID PROMPT CONFIG="" ADW="sdlc" *EXTRA:
     # capturing the pid is ours. A repo whose factory is not SSSF changes one
     # line of sandbox.yaml and this phase does not notice.
     KICKOFF=$("$MF" get kickoff.default)
-    [ -n "$KICKOFF" ] || { echo "execute {{RUN_ID}}: sandbox.yaml declares no kickoff.default — run: $MF check" >&2; exit 1; }
+    # Optional in the manifest, required HERE: a repo can be worth mounting and
+    # serving without having any work to kick off, and making it invent an
+    # `echo {prompt}` to satisfy a field it never uses is a coupling, not a
+    # check. So this phase — the only one that needs it — is where it is missed.
+    [ -n "$KICKOFF" ] || { echo "execute {{RUN_ID}}: this manifest declares no kickoff.default, so there is nothing to run inside the box. Add one to $("$MF" path), or use 'just sbx run cmd' / 'just sbx run agent' instead." >&2; exit 1; }
 
     # quote() hands bash a correct single-quoted literal, so apostrophes in the
     # prompt survive hop 1 (just -> host bash). printf %q then survives hop 2

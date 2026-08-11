@@ -78,9 +78,15 @@ host/manifest.py      the only reader of sandbox.yaml. `get` for single fields, 
                       manifest can never strand a live key.
 host/runs_table.py    renders `just sbx manage list`. A file, not embedded, because an unindented
                       line inside a just recipe body TERMINATES the recipe.
-guest/provision.sh    THIS repo's optional project hook, run INSIDE the VM by the base
-                      (never apt), writes models.json, builds the UI, inits the trace db,
-                      touches the sentinel last.
+host/base_provision.sh  the provisioner the ORCHESTRATOR owns and PUSHES (scp) every mount.
+                      Installs provision.toolchain from CDNs (never apt), symlinks bun into
+                      /usr/local/bin for non-interactive ssh, runs the optional project hook,
+                      and owns /tmp/PROVISION_READY as its literal last line.
+guest/provision.sh    THIS repo's optional project hook, run INSIDE the VM by the base.
+                      Writes models.json, builds the UI, inits the trace db. Does NOT touch
+                      the sentinel — the base does, after this returns.
+guest/gate_factory.sh  THIS repo's health assertions (roster ping, non-zero cost, credit),
+                      declared in sandbox.yaml. Stamped by /sssf install — edit the template.
 guest/models.json.tmpl  10 models, each with a FOUR-field cost block. A partial block fails
                       schema validation and pi drops the entire roster; with no rates pi
                       reports $0.0000 forever while genuinely spending.
@@ -89,6 +95,10 @@ guest/models.json.tmpl  10 models, each with a FOUR-field cost block. A partial 
 ## `adws/` — the factory
 
 ```
+examples/             worked manifests for repos that are not this one. Point the phases at
+                      one with SBX_MANIFEST=<path>. mdn-beginner-html-site declares no
+                      provision, no health and no kickoff — the zero-files-added case.
+
 adws/adw_*.py         12 workflows. Each opens with a `Phases:` docstring that is its chain
                       in one line. Thin on purpose: logic lives in adw_modules/.
 adws/adw_modules/     agents.py (roster + validation), agent_pi.py / agent_cc.py (harness

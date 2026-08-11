@@ -89,6 +89,22 @@ def manifest_path() -> Path:
     return Path(override).expanduser() if override else REPO_ROOT / "sandbox.yaml"
 
 
+def describes_this_checkout() -> bool:
+    """Is the manifest describing the repo it sits in?
+
+    Every `script:` path in a manifest is relative to the CLONE, not to the host
+    checkout. When a repo mounts itself those are the same directory and the
+    path can be verified here, before a VM exists — worth doing, since a renamed
+    hook is otherwise a failure you pay for. When one checkout mounts a DIFFERENT
+    repo they are not the same directory, and checking the host would reject a
+    path that is perfectly valid in the target. Mounting mdn/beginner-html-site
+    from this repo is what surfaced it. The base provisioner and the gate both
+    re-check inside the clone and fail loudly there, so nothing goes unverified —
+    it just gets verified on the box instead of before it.
+    """
+    return manifest_path().resolve() == (REPO_ROOT / "sandbox.yaml").resolve()
+
+
 def load() -> dict:
     target = manifest_path()
     try:
@@ -166,15 +182,13 @@ def problems(data: dict) -> list[str]:
                     "anything else belongs in provision.script"
                 )
 
+    local = describes_this_checkout()
+
     script = dig(data, "provision.script")
     if script is not None:
         if not isinstance(script, str):
             out.append("provision.script must be a path string")
-        elif not (REPO_ROOT / script).is_file():
-            # Checks THIS checkout, which is right while a repo mounts itself.
-            # The base provisioner re-checks it inside the clone and fails loudly
-            # there, so a manifest describing a different repo is caught on the
-            # VM rather than passing silently.
+        elif local and not (REPO_ROOT / script).is_file():
             out.append(f"provision.script {script!r} does not exist in this repo")
 
     # OPTIONAL. Assertion A — clean tree, HEAD matches the recorded sha — is
@@ -202,7 +216,7 @@ def problems(data: dict) -> list[str]:
                 script = h.get("script")
                 if not isinstance(script, str) or not script:
                     out.append(f"{where}.script must be a path string")
-                elif not (REPO_ROOT / script).is_file():
+                elif local and not (REPO_ROOT / script).is_file():
                     out.append(f"{where}.script {script!r} does not exist in this repo")
                 for k in ("expect_stdout", "reject_stdout"):
                     if k in h:
@@ -296,11 +310,16 @@ def problems(data: dict) -> list[str]:
     elif svcs and not public:
         out.append("no service is public — nothing would be reachable anonymously")
 
+    # OPTIONAL. A repo with no work to kick off — a static site, a service you
+    # only want served — should not have to invent an `echo {prompt}` to satisfy
+    # a field it will never use. Mounting mdn/beginner-html-site is what made
+    # that obvious. EXECUTE is the phase that needs it, and EXECUTE says so.
     kick = dig(data, "kickoff.default")
-    if not isinstance(kick, str) or not kick:
-        out.append("kickoff.default is required — EXECUTE has nothing to run")
-    elif "{prompt}" not in kick:
-        out.append("kickoff.default must contain {prompt}")
+    if kick is not None:
+        if not isinstance(kick, str) or not kick:
+            out.append("kickoff.default must be a non-empty string")
+        elif "{prompt}" not in kick:
+            out.append("kickoff.default must contain {prompt}")
 
     return out
 

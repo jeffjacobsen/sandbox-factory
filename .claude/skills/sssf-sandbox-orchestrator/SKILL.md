@@ -100,6 +100,24 @@ sandbox_mount/host/manifest.py check      # what doctor runs
 sandbox_mount/host/manifest.py show       # the whole thing as JSON
 ```
 
+### Mounting a repo that is not this one
+
+`$SBX_MANIFEST` points the phases at a different manifest, so one checkout can mount any repo:
+
+```bash
+SBX_MANIFEST=examples/mdn-beginner-html-site.sandbox.yaml just sbx mount foreign-static
+```
+
+`examples/` holds a worked one. `provision`, `health` and `kickoff` are **all optional**, so a target
+that has never heard of this system needs no files of its own — it gets the image's toolchain, gates
+on git integrity, and gets its service served. Verified end to end against `mdn/beginner-html-site`.
+
+Two things follow from the manifest describing a *different* repo. `script:` paths are relative to
+the CLONE, so they are only checked against the host when the manifest is this repo's own
+`sandbox.yaml`; for a foreign target the base provisioner and the gate check them on the box. And a
+repo with no work to kick off simply omits `kickoff` — `execute` is the one phase that needs it and
+the one that complains, while `run cmd` and `run agent` work regardless.
+
 The whole repo ships to the sandbox, this skill included. **What a sandbox cannot do is USE the
 out-sandbox half** — `just sbx mount` there fails on a missing exe.dev account, and `create` fails on
 a missing `OPENROUTER_PROVISIONING_KEY`. Neither credential ever leaves the host, and that, not file
