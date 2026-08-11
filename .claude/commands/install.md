@@ -1,12 +1,12 @@
 ---
-description: Install Factory In A Box — toolchain, deps, .env, and the sbx preflight for the Super Simple Software Factory (https://github.com/disler/super-simple-software-factory)
+description: Install Factory In A Box — toolchain, deps, .env, and the sbx preflight for the Super Simple Software Factory (https://github.com/jeffjacobsen/sssf)
 ---
 
 # Install Factory In A Box
 
 ## Purpose
 
-Set up this repo for development: the **Inkwell** app, the **[Super Simple Software Factory](https://github.com/disler/super-simple-software-factory)** (the ADW engine this repo runs), and the host-only **sandbox mount system**. This checks the toolchain, installs app dependencies, verifies `.env`, and runs the `sbx` preflight, without starting any servers. It is an interactive, agentic process: ask the user when a choice is needed.
+Set up this repo for development: the **Inkwell** app, the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (the ADW engine this repo runs), and the host-only **sandbox mount system**. This checks the toolchain, installs app dependencies, verifies `.env`, and runs the `sbx` preflight, without starting any servers. It is an interactive, agentic process: ask the user when a choice is needed.
 
 Two audiences, and the install serves both:
 

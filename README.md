@@ -9,7 +9,7 @@
   <img src="images/09_factory_in_a_box.png" alt="Three nested tiers: the Inkwell app inside the factory inside a throwaway exe.dev VM, mounted and watched from the host" width="850">
 </p>
 
-Three tiers nest here: **Inkwell** (a minimalist blog-writing app), the **[Super Simple Software Factory](https://github.com/disler/super-simple-software-factory)** (deterministic Python owns the graph, coding agents are bounded phases inside it), and the **sandbox mount system** (six host-side phases that stand the other two up on a disposable VM in about 10 seconds). The app is the payload. **The point is the loop that ships it without you in the middle.**
+Three tiers nest here: **Inkwell** (a minimalist blog-writing app), the **[Super Simple Software Factory](https://github.com/jeffjacobsen/sssf)** (deterministic Python owns the graph, coding agents are bounded phases inside it), and the **sandbox mount system** (six host-side phases that stand the other two up on a disposable VM in about 10 seconds). The app is the payload. **The point is the loop that ships it without you in the middle.**
 
 You can get value from this repo two ways, and both are first-class:
 
@@ -149,7 +149,7 @@ Twelve ADWs (AI Developer Workflows) under `adws/`, each a thin `uv run` script 
 
 Under every phase is the same primitive: an agent is a model, a harness, tools, and a prompt. The factory holds those four constant and swaps only the prompt and the model per phase. Staffing is one config file, swappable per run: five rosters ship in `adws/adw_sssf_config/`, the cheap default, the frontier roster, pure DeepSeek, open-weights, and top-speed. Every model is `openrouter/<id>`, so the ids are identical on your laptop and inside every box.
 
-The factory has its own standalone codebase at [disler/super-simple-software-factory](https://github.com/disler/super-simple-software-factory), the skill that stamps it into any repo. This repo just runs it.
+The factory has its own standalone codebase at [jeffjacobsen/sssf](https://github.com/jeffjacobsen/sssf), the skill that stamps it into any repo. This repo just runs it.
 
 ## Tier 3: the sandbox
 

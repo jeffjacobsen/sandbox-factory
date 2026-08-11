@@ -16,7 +16,7 @@ Doctrine (from `ai_docs/` debate summaries): code owns the control plane — ADW
 ## Tree
 
 ```
-super-simple-software-factory/
+sssf/
 ├── scaffold.md                                  [all]      this file — the build map
 ├── .env.sample                                  [config]   env vars at root: ANTHROPIC_API_KEY, PI keys, CLAUDE_CODE_PATH, PI_PATH
 ├── ai_docs/                                     [all]      boundary doctrine the factory is built on

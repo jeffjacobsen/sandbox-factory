@@ -80,7 +80,7 @@ run id fails rather than clobbering a live record (clobbering would orphan that 
 just sbx lifecycle fill <run-id> [SHA]
 ```
 
-Plain `git clone https://github.com/disler/inkwell-agent-sandboxes-and-software-factory.git app` —
+Plain `git clone https://github.com/jeffjacobsen/sandbox-factory.git app` —
 public repo, no auth, no GitHub integration, and `.git` comes with it because SSSF commits its own
 plan, code and docs. Optional `SHA` (a sha, tag or branch) pins the run; the pin is resolved
 **inside the clone**, so a short sha or a branch name works.

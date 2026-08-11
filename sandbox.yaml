@@ -27,11 +27,11 @@ version: 1
 # Identity. Becomes the project half of a run id in a multi-repo fleet, so it
 # has to survive DNS: lowercase, hyphens, and short enough to leave room for
 # -<task>-<date>-<6 hex> inside a 63-character hostname label.
-name: inkwell
+name: sandbox-factory
 
 # What FILL clones. Public HTTPS on purpose: no auth, no GitHub integration, no
 # token on the box — measured at 2.61s for 216 files.
-repo: https://github.com/disler/inkwell-agent-sandboxes-and-software-factory.git
+repo: https://github.com/jeffjacobsen/sandbox-factory.git
 
 provision:
   # Runs inside the VM after the clone, streamed live by SETUP. Repo-relative.

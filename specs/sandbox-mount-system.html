@@ -305,7 +305,7 @@ curl -s https://openrouter.ai/api/v1/keys \
     <div class="phase">
       <h3>2. FILL <span class="pill">host-triggered &middot; runs inside &middot; 2.6s</span></h3>
       <div class="cklist">
-    <label class="ck"><input type="checkbox" data-ck="fi1" checked><span><code>ssh &lt;vm&gt; 'git clone https://github.com/disler/inkwell-agent-sandboxes-and-software-factory.git app'</code></span></label>
+    <label class="ck"><input type="checkbox" data-ck="fi1" checked><span><code>ssh &lt;vm&gt; 'git clone https://github.com/jeffjacobsen/sandbox-factory.git app'</code></span></label>
     <label class="ck"><input type="checkbox" data-ck="fi2" checked><span>Optionally <code>git checkout &lt;sha&gt;</code> to pin the run</span></label>
     <label class="ck"><input type="checkbox" data-ck="fi3" checked><span>Write <code>.env</code> into <code>app/</code> with the minted runtime key</span></label>
       </div>
@@ -897,7 +897,7 @@ agent RUN_ID PROMPT:
       <li><strong>Every number in this plan is measured.</strong> The last estimate, phase 2, was
       closed at 2.61s by a full end-to-end run: clone &rarr; provision &rarr; real ADW &rarr; both
       surfaces served and validated in a browser.</li>
-      <li><strong>Public repo.</strong> <code>github.com/disler/inkwell-agent-sandboxes-and-software-factory</code>.
+      <li><strong>Public repo.</strong> <code>github.com/jeffjacobsen/sandbox-factory</code>.
       Clone needs no auth. Pushing a results branch would need the GitHub integration; V1 pulls
       artifacts down over SSH instead, keeping zero credentials in the sandbox.</li>
       <li><strong>Deferred:</strong> <code>/sssf-sandbox-orchestrator</code>, a composite skill
