@@ -101,7 +101,7 @@ which `ssh vm "cmd"` never reads.
 fetched and fast-forwarded, never reset, because a sandbox that already ran an ADW carries commits
 that *are* the run's output.
 
-### 3. setup — provision inside, then the five-assertion gate
+### 3. setup — provision inside, then the gate
 
 ```bash
 just sbx lifecycle setup <run-id>
@@ -121,7 +121,8 @@ half: write `~/.pi/agent/models.json` → `bun install` → `bunx vite build` th
 the trace db → warm the uv cache. It must never touch the sentinel — the base owns that, and writes it
 only after the hook returns.
 
-The five assertions:
+The gate is **one builtin plus what the manifest declares**. Builtin, always runs, and not
+overridable — it is a claim about the mount rather than about the payload:
 
 | | Asserts | Why it exists |
 |---|---|---|

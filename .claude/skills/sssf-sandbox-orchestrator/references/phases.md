@@ -25,7 +25,7 @@ tree stays clean and a harvested branch carries only the run's own work.
 | **create** `RUN_ID [--limit N]` | host only — exe.dev control plane + OpenRouter mint API. Nothing lands on the VM. | `ssh`, `curl`, `python3` on PATH; `OPENROUTER_PROVISIONING_KEY` in `.env`; hostname-safe run id (≤63 chars) | ssh answers on `<vm>.exe.xyz` within 60s | `run_id`, `created_at`, `vm_name`, `https_url`, `key_hash`, `limit`, `session_id` |
 | **fill** `RUN_ID [SHA]` | host-triggered, the clone runs inside the VM | `vm_name` in the record; `~/.local/state/sbx/runs/<id>.key` non-empty | checked-out HEAD == the resolved pin (when a SHA/tag/branch was given). Unpinned: HEAD is reported and recorded, not gated | `commit_sha` |
 | ↳ *the run branch* | inside, at the end of the clone step | — | none — `git switch -c sbx/<run-id>` at existing HEAD adds no commit and changes no file, so assertion **A** still compares the same sha | *nothing* |
-| **setup** `RUN_ID` | inside — `scp` the base provisioner, `ssh <vm> 'bash /tmp/sbx_base_provision.sh "$HOME/app" <toolchain> <hook>'`, then the gate | `vm_name` **and** `commit_sha` in the record | five assertions **A–E**, all must pass | *nothing* |
+| **setup** `RUN_ID` | inside — `scp` the base provisioner, `ssh <vm> 'bash /tmp/sbx_base_provision.sh "$HOME/app" <toolchain> <hook>'`, then the gate | `vm_name` **and** `commit_sha` in the record | git integrity (builtin) + every `health:` entry in the manifest, all must pass | *nothing* |
 | **execute** `RUN_ID "PROMPT"` | host-triggered, `just adw sdlc` runs inside, detached | `vm_name` in the record; a passed SETUP | the remote shell returns a numeric PID (non-numeric = the remote printed an error where the PID should be) | `pid` |
 | **observe** `RUN_ID` | host + VM — starts both servers, retargets the proxy | `vm_name`; `adws/adw_data/sssf.db` present on the VM (the visualizer exits without it) | app returns **200 anonymously**; obs port is reachable (anything that is not `000` and not `5xx`) | `ports` |
 | **teardown** `RUN_ID` | host only, and only when we decide | the record (hard prerequisite — it is the only handle on the key); `OPENROUTER_PROVISIONING_KEY` if `key_hash` is set | `key_hash` is **absent from `GET /api/v1/keys`** — the LIST, never `/api/v1/key` | `spend`, `closed_at` |
@@ -186,7 +186,7 @@ through untouched). Every later phase takes the full run id.
 ## Status
 
 Five phases verified end to end on a real VM (`inkwell-e2e-20260804-e08747`): create → fill →
-setup (all five assertions) → execute → observe, with both surfaces served and the gate proven by
+setup (gate green) → execute → observe, with both surfaces served and the gate proven by
 deliberate failure. Teardown has since been exercised against a live sandbox: spend → artifacts → harvest →
 revoke → destroy → close, with the revocation gate confirming the key was gone from the
 OpenRouter list.

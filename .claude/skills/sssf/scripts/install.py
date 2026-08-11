@@ -79,6 +79,14 @@ def main() -> int:
     # plus the run banner tell you to use them, so a stamped repo has to have
     # them. Skipped like any other file if the repo already has a justfile.
     stamp(TEMPLATES / "justfile", root / "justfile", args.force, stamped, skipped)
+    # The factory's own sandbox health assertions. A stamped repo is then
+    # sandbox-ready by construction: the gates that prove "pi is healthy and the
+    # roster answers" travel with the factory that makes those claims, rather
+    # than living in the mount system, which has no business knowing what pi is.
+    stamp(TEMPLATES / "sandbox" / "gate_factory.sh",
+          root / "sandbox_mount" / "guest" / "gate_factory.sh", args.force, stamped, skipped)
+    stamp(TEMPLATES / "sandbox" / "health.yaml",
+          root / "sandbox_mount" / "sandbox_health.yaml", args.force, stamped, skipped)
     ensure_gitignore(root, stamped)
 
     print(f"sssf installed into {root}")
@@ -92,6 +100,8 @@ def main() -> int:
     print("  2. just demo             # two cheap read-only runs, end to end")
     print("  3. just sessions         # what just happened")
     print("  4. just obs              # the trace UI, needs bun")
+    print("\n  to mount this repo in a sandbox, paste sandbox_mount/sandbox_health.yaml")
+    print("  into the health: block of its sandbox.yaml")
     print("\n  no just? the raw form of step 2 is:")
     print("     uv run adws/adw_prompt.py \"say hello\" --agent scout")
     return 0

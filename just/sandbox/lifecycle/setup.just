@@ -4,26 +4,32 @@
 # and settings. No `set` lines here on purpose: duplicating `dotenv-load` or
 # `positional-arguments` is a hard error at parse time.
 #
-# What this phase does: run provision.sh inside the sandbox, wait for its
-# sentinel, then run the five-assertion health gate. Nothing here creates or
+# What this phase does: push and run the base provisioner inside the sandbox,
+# wait for its sentinel, then run the health gate. Nothing here creates or
 # destroys a VM. On failure it prints how to get into the box and exits
 # non-zero, because a gate that auto-destroys throws away the evidence.
 #
-# The OpenRouter PROVISIONING key never appears in this file. The gate spends
-# money, so it uses the disposable RUNTIME key — which already lives on the VM
-# in app/.env (written in FILL). That is why assertions C/D/E execute inside the
-# sandbox: the key never has to travel, and the gate proves the sandbox's own
-# egress works rather than the host's.
+# THE GATE IS ONE BUILTIN PLUS WHATEVER THE MANIFEST DECLARES. Assertion A —
+# working tree clean, HEAD matching the recorded sha — is a claim about the
+# MOUNT, so it lives here and always runs. The rest are claims about the
+# PAYLOAD, so they live in the target repo's `health:` block and travel with it.
+# A repo that declares none still gates on A.
+#
+# The OpenRouter PROVISIONING key never appears in this file. A gate that spends
+# money uses the disposable RUNTIME key — which already lives on the VM in
+# app/.env (written in FILL). That is why every declared assertion executes
+# inside the sandbox: the key never has to travel, and the gate proves the
+# sandbox's own egress works rather than the host's.
 
-# CONFIG picks which roster assertion C pings, and defaults to the starter
-# roster. It has to be an ARGUMENT: C used to read $SSSF_CONFIG out of the
-# remote environment, but `ssh host 'cmd'` carries no environment at all, so
-# that read always fell through to the default. On a fan-out where each arm runs
-# a different roster, every arm was gated against models it would never call —
-# the gate passed and told you nothing. Pass the same path here that you pass to
-# `just sbx lifecycle execute`.
+# CONFIG is forwarded to every `script` health assertion as $1 — for this repo
+# that is which roster to ping. It has to be an ARGUMENT: the assertion used to
+# read $SSSF_CONFIG out of the remote environment, but `ssh host 'cmd'` carries
+# no environment at all, so that read always fell through to the default. On a
+# fan-out where each arm runs a different roster, every arm was gated against
+# models it would never call — the gate passed and told you nothing. Pass the
+# same path here that you pass to `just sbx lifecycle execute`.
 
-# phase 3: provision the sandbox, then gate it (never destroys the VM). CONFIG picks the roster C pings
+# phase 3: provision the sandbox, then gate it (never destroys the VM). CONFIG reaches every script assertion as $1
 setup RUN_ID CONFIG="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -39,8 +45,7 @@ setup RUN_ID CONFIG="":
     # repos that already carried it. Now the host scp's a base provisioner it
     # owns; the manifest says only which tools to install and which optional
     # project hook to run after. Both may be empty: a repo that declares neither
-    # still mounts. Gates A-E below are still host code — they move into the
-    # manifest in a later step, and until they do this file owns them.
+    # still mounts.
     BASE="sandbox_mount/host/base_provision.sh"
     [ -f "$BASE" ] || { echo "[setup] missing ${BASE} — the orchestrator's own provisioner" >&2; exit 1; }
     TOOLCHAIN=$("$MF" toolchain)
@@ -105,7 +110,8 @@ setup RUN_ID CONFIG="":
     echo "[setup]     sentinel present"
 
     # ── 3. the gate ──────────────────────────────────────────────────────────
-    echo "[setup] 3/3 health gate (5 assertions)"
+    N_HEALTH=$("$MF" health | grep -c . || true)
+    echo "[setup] 3/3 health gate (A builtin + ${N_HEALTH} declared)"
 
     # A — git integrity. Content, not existence: an unsynced golden-VM clone
     # produced 5,641 zero-byte files and reported success, and truncation shows
@@ -141,156 +147,55 @@ setup RUN_ID CONFIG="":
       gate_fail "assertion A — git integrity"
     fi
 
-    # B — pi has models. `pi --list-models` EXITS 0 while printing
-    # "No models available", so never trust $?: assert on the output, and
-    # reject that exact string, which is otherwise one non-empty line and would
-    # sail through a naive non-empty check.
-    echo "[gate] B pi --list-models is non-empty"
-    if "${SSH[@]}" 'bash -s' <<'REMOTE_B'; then
-    set -uo pipefail
-    # `command -v` first: without it a missing pi prints one line of
-    # "command not found" and a bare non-empty check calls that a pass.
-    command -v pi >/dev/null 2>&1 || { echo "   pi is not on PATH"; exit 1; }
-    out="$(pi --list-models 2>&1 || true)"
-    n="$(printf '%s\n' "$out" | grep -c . || true)"
-    if [ "${n:-0}" -eq 0 ]; then
-      echo "   pi --list-models printed nothing"; exit 1
-    fi
-    if printf '%s' "$out" | grep -qi 'no models available'; then
-      echo "   pi says: No models available — ~/.pi/agent/models.json did not load"; exit 1
-    fi
-    echo "   ${n} lines from pi --list-models"
-    REMOTE_B
-      echo "[gate] B PASS  pi model registry loaded"
-    else
-      gate_fail "assertion B — pi --list-models empty or 'No models available'"
-    fi
-
-    # C, D, E run as ONE script inside the sandbox. They all need the runtime
-    # key, which lives in app/.env on the VM — keeping them there means the key
-    # never crosses the wire and the gate exercises the sandbox's own egress.
-    # D's usage baseline is also E's first reading, so this is one round trip.
-    echo "[gate] C roster ping   D non-zero cost   E remaining credit"
-    if "${SSH[@]}" 'bash -s' {{ quote(CONFIG) }} <<'REMOTE_CDE'; then
-    set -uo pipefail
-    cd "$HOME/app" || { echo "   no ~/app on this VM"; exit 1; }
-    command -v jq >/dev/null 2>&1 || { echo "   jq missing (it ships in the exeuntu image)"; exit 1; }
-
-    # Runtime key, read exactly the way provision.sh reads it. NEVER echoed.
-    KEY="$(grep -E '^[[:space:]]*(export[[:space:]]+)?OPENROUTER_API_KEY=' .env \
-           | tail -n 1 | sed -E 's/^[^=]*=//; s/^["'"'"']//; s/["'"'"']$//' || true)"
-    [ -n "$KEY" ] || { echo "   no OPENROUTER_API_KEY in app/.env — FILL did not inject the runtime key"; exit 1; }
-
-    key_usage() {   # dollars spent on this key so far
-      curl -sS --max-time 60 https://openrouter.ai/api/v1/key \
-        -H "Authorization: Bearer ${KEY}" | jq -r '.data.usage // 0'
-    }
-
-    usage_before="$(key_usage)"
-
-    # ── C: ping every model in the ACTIVE roster ─────────────────────────────
-    # Config values look like `openrouter/google/gemini-3.6-flash`: the first
-    # segment is pi's PROVIDER name, not part of the OpenRouter id, so strip it.
-    # $1 is the CONFIG argument, forwarded over ssh as a positional because the
-    # remote shell inherits no environment. Empty means "caller did not pick",
-    # so fall through to the old behaviour.
-    CFG="${1:-}"
-    [ -n "$CFG" ] || CFG="${SSSF_CONFIG:-adws/adw_sssf_config/sssf.config.yaml}"
-    [ -f "$CFG" ] || { echo "   missing ${CFG}"; exit 1; }
-    MODELS="$(awk '/^[[:space:]]*model:[[:space:]]/ {print $2}' "$CFG" \
-              | sed 's|^openrouter/||' | sort -u)"
-    [ -n "$MODELS" ] || { echo "   parsed zero models out of ${CFG}"; exit 1; }
-
-    ping_fail=0
-    for m in $MODELS; do
-      body="$(printf '{"model":"%s","max_tokens":256,"provider":{"zdr":true,"data_collection":"deny"},"messages":[{"role":"user","content":"ping - respond with pong"}]}' "$m")"
-      resp="$(curl -sS --max-time 180 https://openrouter.ai/api/v1/chat/completions \
-                -H "Authorization: Bearer ${KEY}" \
-                -H 'Content-Type: application/json' \
-                -d "$body" || true)"
-      # Reasoning models answer with content=null and the text under .reasoning.
-      # Accepting only .content here produces false failures on those models.
-      text="$(printf '%s' "$resp" | jq -r '
-        ((.choices[0].message.content // "") + (.choices[0].message.reasoning // ""))
-      ' 2>/dev/null || true)"
-      if [ -n "$text" ] && [ "$text" != "null" ]; then
-        echo "   pass  ${m}"
-      else
-        err="$(printf '%s' "$resp" | jq -r '.error.message // .error // "no content and no error field"' 2>/dev/null || echo 'unparseable response')"
-        echo "   FAIL  ${m}: ${err}"
-        ping_fail=1
-      fi
-    done
-
-    usage_after="$(key_usage)"
-
-    # ── D: pi actually REPORTS cost ──────────────────────────────────────────
-    # The thing being guarded is precise: adw_modules/agent_pi.py reads
-    # usage.cost.total straight out of pi, and pi defaults every rate to ZERO
-    # when models.json carries no `cost` block. A factory in that state runs
-    # fine and reports $0.0000 forever while genuinely spending. Observed: a
-    # 463.6k-token run logged $0.0000.
+    # ── B onward: the PROJECT's assertions, declared in sandbox.yaml ─────────
+    # These used to be four hardcoded blocks here. They are claims about the
+    # payload ("an SSSF factory driven by pi over OpenRouter"), not about
+    # sandboxes, so they belong with the repo that makes them. A repo that
+    # declares no health block still gates on A above.
     #
-    # So ask pi directly rather than asking OpenRouter. An earlier version
-    # diffed /api/v1/key usage before and after the pings; that is the WRONG
-    # INSTRUMENT and it false-failed this gate on the first live mount — four
-    # 250-token pings round to $0 in that endpoint, so a correctly configured
-    # sandbox looked broken. A real pi call on the cheapest roster model reports
-    # cost 4.3e-05 for one sentence, which is small but unambiguously > 0.
-    cost_fail=0
-    # jq, not python: an unindented line inside a recipe body TERMINATES the
-    # recipe, and multi-line python cannot survive that. jq ships in the image.
-    pi_cost="$(timeout 180 pi -p --mode json \
-                 --provider openrouter --model deepseek/deepseek-v4-flash-0731 \
-                 'Write one sentence about sandboxes.' 2>/dev/null \
-               | jq -s '[.. | objects | select(has("cost")) | .cost.total // 0] | max // 0' \
-               || echo 0)"
-    if awk -v c="$pi_cost" 'BEGIN { exit !(c > 0) }'; then
-      echo "   pi reports cost \$${pi_cost} on a live call (rate table is loaded)"
+    # < /dev/null on every ssh in this loop is load-bearing: ssh reads the
+    # caller's stdin, and the caller's stdin IS the assertion list. Without it
+    # the first ssh eats the rest and the loop runs exactly once.
+    HEALTH=$("$MF" health)
+    if [ -z "$HEALTH" ]; then
+      echo "[gate] sandbox.yaml declares no health assertions — only A ran"
     else
-      echo "   FAIL  pi reported cost 0 — models.json has no rate table, so every"
-      echo "         run will log \$0.0000 while really spending money"
-      cost_fail=1
-    fi
-    # Second half: the registry itself. Catches a partial rate table that the
-    # single call above happened not to touch. NOTE pi's schema requires ALL
-    # FOUR of input/output/cacheRead/cacheWrite — a partial block fails
-    # validation and pi then drops THE ENTIRE ROSTER, not just that model.
-    MJ="$HOME/.pi/agent/models.json"
-    if [ -f "$MJ" ] && jq -e '[.providers[].models[] | (.cost.input // 0)] | (length > 0) and all(. > 0)' "$MJ" >/dev/null 2>&1; then
-      echo "   rate table present: every model in models.json has a non-zero input cost"
-    else
-      echo "   FAIL  models.json is missing rates — pi will report \$0.0000 on every run"
-      cost_fail=1
-    fi
-
-    # ── E: remaining credit on the runtime key ───────────────────────────────
-    # Remaining is COMPUTED from limit-usage rather than read from a
-    # limit_remaining field, so this cannot break on a field name we have not
-    # verified. A null limit means the key is uncapped.
-    kj="$(curl -sS --max-time 60 https://openrouter.ai/api/v1/key -H "Authorization: Bearer ${KEY}")"
-    printf '%s' "$kj" | jq -r '
-      .data as $d
-      | "   limit     " + (if $d.limit == null then "uncapped" else ("$" + ($d.limit|tostring)) end),
-        "   used      $" + (($d.usage // 0)|tostring),
-        "   remaining " + (if $d.limit == null then "uncapped" else ("$" + (($d.limit - ($d.usage // 0))|tostring)) end)
-    ' || { echo "   could not read /api/v1/key"; exit 1; }
-
-    [ "$ping_fail" -eq 0 ] || exit 2
-    [ "$cost_fail" -eq 0 ] || exit 3
-    REMOTE_CDE
-      echo "[gate] C PASS  every roster model answered"
-      echo "[gate] D PASS  non-zero cost and a loaded rate table"
-      echo "[gate] E PASS  credit reported above"
-    else
-      # Exit code tells which of the three failed; the per-line FAIL output above
-      # already named the model or the reading.
-      rc=$?
-      case "$rc" in
-        2) gate_fail "assertion C — at least one roster model did not answer" ;;
-        3) gate_fail "assertion D — no spend delta and/or no rate table in models.json" ;;
-        *) gate_fail "assertions C/D/E — the remote gate script exited ${rc} (see output above)" ;;
-      esac
+      while IFS=$'\t' read -r H_NAME H_KIND H_VALUE H_EXPECT H_REJECT; do
+        [ -n "$H_NAME" ] || continue
+        echo "[gate] ${H_NAME}"
+        if [ "$H_KIND" = "script" ]; then
+          # The script's exit code is the verdict, and it is run in the clone so
+          # a repo-relative path is all the manifest has to carry. CONFIG goes in
+          # as a positional because `ssh host cmd` carries no environment.
+          if "${SSH[@]}" "cd \$HOME/app && bash ${H_VALUE} $(printf '%q' "{{ CONFIG }}")" < /dev/null; then
+            echo "[gate] PASS  ${H_NAME}"
+          else
+            rc=$?
+            # Exit codes a script may use to say WHICH of its claims failed; the
+            # per-line output above already named the model or the reading.
+            case "$rc" in
+              2) gate_fail "${H_NAME} — a roster model did not answer (exit 2)" ;;
+              3) gate_fail "${H_NAME} — no reported cost and/or no rate table (exit 3)" ;;
+              *) gate_fail "${H_NAME} — ${H_VALUE} exited ${rc}" ;;
+            esac
+          fi
+        else
+          # A cmd passes only if it exits 0 AND prints something AND does not
+          # match reject_stdout. Emptiness is a failure on purpose: an assertion
+          # that proves the payload healthy has something to say about it.
+          OUT=$("${SSH[@]}" "cd \$HOME/app && ${H_VALUE}" < /dev/null 2>&1) || \
+            gate_fail "${H_NAME} — \`${H_VALUE}\` exited non-zero: ${OUT}"
+          [ -n "$OUT" ] || gate_fail "${H_NAME} — \`${H_VALUE}\` printed nothing"
+          if [ "$H_REJECT" != "-" ] && printf '%s' "$OUT" | grep -qiF -- "$H_REJECT"; then
+            gate_fail "${H_NAME} — output contains the rejected string: ${H_REJECT}"
+          fi
+          if [ "$H_EXPECT" != "-" ] && ! printf '%s' "$OUT" | grep -qiF -- "$H_EXPECT"; then
+            gate_fail "${H_NAME} — output does not contain: ${H_EXPECT}"
+          fi
+          echo "   $(printf '%s\n' "$OUT" | grep -c . || true) line(s) of output"
+          echo "[gate] PASS  ${H_NAME}"
+        fi
+      done <<< "$HEALTH"
     fi
 
     echo ""

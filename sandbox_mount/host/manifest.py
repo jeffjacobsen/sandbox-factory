@@ -15,6 +15,7 @@ Usage:
     manifest.py services
     manifest.py secrets
     manifest.py toolchain
+    manifest.py health
     manifest.py ports-json
     manifest.py show
     manifest.py path
@@ -69,6 +70,12 @@ SERVICE_FIELDS = {"dir", "cmd", "port", "public", "requires", "env"}
 # actually been measured here, and the answer to "please add cargo" is a project
 # hook, not a fourth installer -- never apt, at ~35s per package from dal.
 TOOLCHAIN = ("bun", "just", "uv")
+
+# A health entry is a `cmd` with optional output assertions, or a `script` whose
+# exit code is the verdict. Exactly one escape hatch per section, deliberately:
+# the moment a manifest grows conditionals it is a DSL, and the answer to
+# anything expressive is a repo-local script, not a new key.
+HEALTH_FIELDS = {"name", "cmd", "script", "expect_stdout", "reject_stdout"}
 
 EMPTY = "-"  # TSV placeholder: `read` drops trailing empty fields, a dash survives
 
@@ -166,6 +173,50 @@ def problems(data: dict) -> list[str]:
             # there, so a manifest describing a different repo is caught on the
             # VM rather than passing silently.
             out.append(f"provision.script {script!r} does not exist in this repo")
+
+    # OPTIONAL. Assertion A — clean tree, HEAD matches the recorded sha — is
+    # builtin in SETUP and always runs, because it is a claim about the mount
+    # itself. Everything here is a claim about the PAYLOAD, so a repo that makes
+    # no such claim declares nothing and still gates on A.
+    health = data.get("health") or []
+    if not isinstance(health, list):
+        out.append("health must be a list")
+    else:
+        for i, h in enumerate(health):
+            where = f"health[{i}]"
+            if not isinstance(h, dict):
+                out.append(f"{where} must be a mapping with name and cmd or script")
+                continue
+            unknown = set(h) - HEALTH_FIELDS
+            if unknown:
+                out.append(f"{where} has unknown field(s): {', '.join(sorted(unknown))}")
+            if not isinstance(h.get("name"), str) or not h.get("name"):
+                out.append(f"{where}.name is required — it is what the gate prints")
+            has_cmd, has_script = "cmd" in h, "script" in h
+            if has_cmd == has_script:
+                out.append(f"{where} needs exactly one of cmd or script")
+            if has_script:
+                script = h.get("script")
+                if not isinstance(script, str) or not script:
+                    out.append(f"{where}.script must be a path string")
+                elif not (REPO_ROOT / script).is_file():
+                    out.append(f"{where}.script {script!r} does not exist in this repo")
+                for k in ("expect_stdout", "reject_stdout"):
+                    if k in h:
+                        out.append(f"{where}.{k} only applies to cmd; a script's exit code is its verdict")
+            if has_cmd and (not isinstance(h.get("cmd"), str) or not h.get("cmd")):
+                out.append(f"{where}.cmd must be a non-empty string")
+            for k in ("expect_stdout", "reject_stdout"):
+                v = h.get(k)
+                if k in h and (not isinstance(v, str) or not v):
+                    out.append(f"{where}.{k} must be a non-empty string")
+            # The TSV the gate loop reads is tab-delimited and line-oriented, so
+            # a tab or newline in any field would silently become another column
+            # or another assertion. Reject it here instead of on a live VM.
+            for k in ("name", "cmd", "script", "expect_stdout", "reject_stdout"):
+                v = h.get(k)
+                if isinstance(v, str) and ("\t" in v or "\n" in v):
+                    out.append(f"{where}.{k} must not contain a tab or a newline")
 
     secrets = data.get("secrets") or []
     if not isinstance(secrets, list):
@@ -314,6 +365,26 @@ def cmd_toolchain(data: dict) -> int:
     return 0
 
 
+def cmd_health(data: dict) -> int:
+    """TSV: name kind value expect reject — one line per assertion, in order.
+
+    Same fixed-field discipline as `services`: SETUP reads this in a
+    `while IFS=$'\\t' read` loop and `read` drops trailing empty fields, so an
+    optional field falls back to a dash rather than an empty string. Order is
+    declaration order — assertions run in the order the repo wrote them.
+    """
+    for h in data.get("health") or []:
+        kind = "script" if "script" in h else "cmd"
+        print("\t".join([
+            h.get("name", ""),
+            kind,
+            str(h.get(kind, "")),
+            h.get("expect_stdout") or EMPTY,
+            h.get("reject_stdout") or EMPTY,
+        ]))
+    return 0
+
+
 def cmd_ports_json(data: dict) -> int:
     """The `ports` field of the run record, built from the same source of truth.
 
@@ -363,6 +434,8 @@ def main(argv: list[str]) -> int:
         return cmd_secrets(data)
     if cmd == "toolchain":
         return cmd_toolchain(data)
+    if cmd == "health":
+        return cmd_health(data)
     if cmd == "ports-json":
         return cmd_ports_json(data)
     if cmd == "show":

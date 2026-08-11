@@ -1,0 +1,26 @@
+# The factory's own health assertions, as a sandbox.yaml fragment.
+#
+# PASTE THIS into the `health:` block of the sandbox.yaml of any repo you want
+# to mount. It is stamped here rather than merged automatically because
+# sandbox.yaml is the target repo's file and may not exist yet — the sandbox
+# mount system creates it, this only supplies the factory's share of it.
+#
+# WHY IT SHIPS WITH THE FACTORY: "pi has a model registry, every roster model
+# answers, cost is reported, credit remains" is a claim about an SSSF payload,
+# not about sandboxes. The orchestrator keeps exactly one builtin assertion —
+# working tree clean and HEAD matching the recorded sha — because that one is
+# about the mount and is true for every repo.
+
+health:
+  # pi EXITS 0 while printing "No models available", so the exit code proves
+  # nothing here. Rejecting that string by name is the whole assertion.
+  - name: pi model registry loaded
+    cmd: pi --list-models
+    reject_stdout: No models available
+
+  # One script for the remaining three: they all need the runtime key that FILL
+  # wrote into the clone's .env, so keeping them together means the key never
+  # crosses the wire and one round trip covers all three. Gets the roster config
+  # path as $1. Exit 2 = a model did not answer, 3 = no cost / no rate table.
+  - name: roster answers, cost is non-zero, credit remains
+    script: sandbox_mount/guest/gate_factory.sh

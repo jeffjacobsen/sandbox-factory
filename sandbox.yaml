@@ -13,8 +13,7 @@
 # EVERY FIELD BELOW IS CONSUMED by a phase today. When a field stops being read,
 # delete it — a manifest that describes behaviour nobody implements is worse
 # than no manifest, in exactly the way an unchecked box in the spec is not the
-# same as an unwritten one. (The health gate is the next section to arrive here;
-# until it does, setup.just still owns assertions A-E in host code.)
+# same as an unwritten one.
 #
 # Two placeholders are expanded by the host, never by YAML:
 #   {runtime_key}  the per-run OpenRouter key, substituted in bash so it never
@@ -53,6 +52,31 @@ secrets:
   - dest: .env
     vars:
       OPENROUTER_API_KEY: "{runtime_key}"
+
+# What SETUP asserts before calling the box healthy, in order. Assertion A —
+# working tree clean and HEAD matching the recorded sha — is NOT here: it is a
+# claim about the mount, it is what caught 5,641 zero-byte files from an unsynced
+# golden clone, and it stays builtin in the orchestrator and always runs.
+#
+# Everything below is a claim about THIS PAYLOAD — "an SSSF factory driven by pi
+# over OpenRouter" — which is why it travels with the repo. A project that makes
+# no such claim declares no health block and still gates on A.
+#
+# `cmd` fails on a non-zero exit, on empty stdout, or on a reject_stdout match.
+# `script` gets the roster config as $1 and its exit code is the verdict.
+health:
+  # pi EXITS 0 while printing "No models available", so the exit code proves
+  # nothing here — that string is one non-empty line and would sail through any
+  # naive check. Rejecting it by name is the whole assertion.
+  - name: pi model registry loaded
+    cmd: pi --list-models
+    reject_stdout: No models available
+
+  # Roster ping, non-zero cost, remaining credit — one script because all three
+  # need the runtime key that is already in app/.env, so the key never crosses
+  # the wire and one round trip covers all three.
+  - name: roster answers, cost is non-zero, credit remains
+    script: sandbox_mount/guest/gate_factory.sh
 
 # What OBSERVE starts and exposes. Ports must sit in 3000-9999 (the proxy
 # auto-forwards that range) and EXACTLY ONE service may be public — "public" is

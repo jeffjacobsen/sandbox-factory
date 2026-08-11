@@ -1,6 +1,6 @@
 # Debug a Failed Gate
 
-The SETUP gate (`just/sandbox/setup.just`, step 3/3) runs five assertions against a mounted sandbox.
+The SETUP gate (`just/sandbox/lifecycle/setup.just`, step 3/3) runs the builtin git-integrity assertion plus every `health:` entry the target repo's `sandbox.yaml` declares.
 When one fails it **reports, stops, and leaves the VM running**. That is deliberate: the evidence you
 need is on the box, and a gate that auto-destroys throws it away. Nothing in the six phases destroys a
 VM except `just sbx lifecycle teardown`, and teardown is always a separate human decision.

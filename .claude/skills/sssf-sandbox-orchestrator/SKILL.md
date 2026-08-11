@@ -126,7 +126,7 @@ their own contents when run bare.
 | `just sbx mount RUN_ID [--limit N]` | create → fill → setup → observe. **Never teardown.** Prints the resolved run id and both URLs. |
 | `just sbx lifecycle create RUN_ID [--limit N]` | mint `sbx-<run-id>` (\$50 default) + boot the VM, in record → VM → key order |
 | `just sbx lifecycle fill RUN_ID [SHA]` | public `git clone` (2.61s, no auth), optional SHA pin, write `.env` with the runtime key |
-| `just sbx lifecycle setup RUN_ID` | scp the base provisioner, run it (toolchain + optional hook), then the five-assertion gate |
+| `just sbx lifecycle setup RUN_ID` | scp the base provisioner, run it (toolchain + optional hook), then the gate: git integrity builtin + the manifest's `health:` entries |
 | `just sbx lifecycle execute RUN_ID "PROMPT"` | full SDLC detached inside the box; returns a pid, records it |
 | `just sbx run cmd RUN_ID '<cmd>'` | generic escape hatch, synchronous, runs in `app/`. Your inspection tool. |
 | `just sbx run agent RUN_ID "PROMPT"` | Claude Code inside the box, resumable session — hand off, then keep talking |
@@ -139,11 +139,20 @@ their own contents when run bare.
 The run id is the handle for every phase. `create` appends `-<date>-<6 hex>` if you did not, and
 prints what it settled on — use that string, not the one you typed.
 
-**The five gate assertions** (`setup`): **A** git integrity (`status --porcelain` clean, HEAD
-matches the recorded sha) · **B** `pi --list-models` non-empty — *it exits 0
-while empty* · **C** every roster model answers a ping · **D** pi reports **non-zero** cost, which
-proves the rate table loaded · **E** remaining credit. A failure **reports, stops, and leaves the VM
-alive**.
+**The gate is one builtin plus whatever the manifest declares.** Builtin and always run:
+**git integrity** — `status --porcelain` clean and HEAD matching the recorded sha. That one is a
+claim about the MOUNT, and it is what caught 5,641 zero-byte files from an unsynced golden clone.
+
+Everything else lives in the target repo's `health:` block, because "pi is healthy and the roster
+answers" is a claim about the PAYLOAD. Each entry is a `cmd` (fails on non-zero exit, on empty
+output, or on a `reject_stdout` match — `pi --list-models` **exits 0 while printing "No models
+available"**, which is exactly what `reject_stdout` is for) or a `script` whose exit code is the
+verdict and which receives `CONFIG` as `$1`. This repo declares two: the pi registry, and one script
+covering roster ping + non-zero cost + remaining credit — together because all three need the
+runtime key already in the clone's `.env`, so the key never crosses the wire.
+
+A repo that declares no `health:` block still gates on git integrity. A failure **reports, stops,
+and leaves the VM alive**.
 
 ## Cookbooks (lazy-load the one the request calls for)
 

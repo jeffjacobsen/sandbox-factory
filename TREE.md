@@ -50,7 +50,7 @@ just/sandbox/         the `sbx` namespace. HOST-ONLY: needs the exe.dev account 
                       teardown a handle.
     fill.just         phase 2. Public git clone (no auth), the `sbx/<run-id>` run branch, then
                       write .env with the runtime key.
-    setup.just        phase 3. push the base provisioner, then the FIVE-assertion gate.
+    setup.just        phase 3. push the base provisioner, then the gate (A builtin + declared).
     execute.just      phase 4. Full SDLC inside the box, detached, returns a pid.
     observe.just      phase 5. Start both servers, expose 4501 publicly, print both URLs.
     teardown.just     phase 6. Harvests first, then revoke -> destroy -> close.
