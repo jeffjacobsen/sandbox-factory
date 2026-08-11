@@ -68,7 +68,12 @@ quality:
 
 agents:
   - name: planner
-    model: fireworks/accounts/fireworks/models/kimi-k3
+    model: moonshotai/kimi-k3
+    # An OpenRouter id, like every other model here. This was once
+    # `fireworks/accounts/fireworks/models/kimi-k3` — a Fireworks provider path,
+    # which OpenRouter does not serve, so the roster ping could not resolve it
+    # and every fresh stamp shipped a planner that 404s. The registry in
+    # models.json.tmpl already declared the right id; only this line was wrong.
     thinking: high
     color: "#a78bfa"                 # optional hex — the agent's lane color in the visualizer
     purpose: Turn a request into a plan the builder can implement without asking questions.

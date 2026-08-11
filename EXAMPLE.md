@@ -121,10 +121,17 @@ sbx lifecycle setup fts5-search-20260811-984a34
 [setup] GATE PASSED — fts5-search-20260811-984a34 is healthy
 ```
 
-> **Still open:** the defect is in the *template*
+> **Since fixed everywhere.** The defect was in the *template*
 > (`.claude/skills/sssf/templates/sssf.config.yaml`), so every fresh
-> `/sssf install` stamps the same dead model id. Fixed in inkwell only. It needs
-> fixing in `sandbox-factory` and mirrored to `jeffjacobsen/sssf`.
+> `/sssf install` stamped the same dead id. Corrected in `sandbox-factory` and
+> mirrored to `jeffjacobsen/sssf`.
+>
+> The right id turned out to be `moonshotai/kimi-k3` — the model the roster
+> always meant, already declared in `models.json.tmpl`, and served by OpenRouter.
+> Only the *prefix* was ever wrong. The run below used `openai/gpt-5.6-terra`
+> because the first fix substituted a different model on a bad reading of a
+> truncated `pi --list-models`; checking the public models endpoint settled it.
+> The lesson is smaller than it looked: not a missing model, a mistyped provider.
 
 ---
 
