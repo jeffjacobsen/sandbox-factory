@@ -1,13 +1,43 @@
 # The run record
 
-`.sandbox/runs/<run-id>.json` — the only state shared across the six phases.
+`~/.local/state/sbx/runs/<run-id>.json` — the only state shared across the six phases.
 
 Each phase is a separate process, so nothing survives between them except what is on disk.
 Teardown has no other way to learn which OpenRouter key to revoke: **lose the record and the key
-is unrevokable and keeps burning credit.** `.sandbox/` is gitignored.
+is unrevokable and keeps burning credit.**
 
 Implementation: `sandbox_mount/host/run_record.py`. Stdlib only, on purpose — it runs on the host
 before any toolchain exists and must never be the reason a teardown cannot start.
+
+## Where the store lives, and why it is not in the repo
+
+```
+$SBX_STATE_DIR/runs   else   $XDG_STATE_HOME/sbx/runs   else   ~/.local/state/sbx/runs
+```
+
+**Per machine, not per repo.** What this holds is scoped to an *account* — one exe.dev account,
+one OpenRouter account — while a repo is scoped to a project. `reap` lists every `sbx-` key and
+every VM on those accounts and joins them against these records; with the store inside a repo,
+mounting from a second repo gives you two partial views of one account and a key can hide in the
+gap. `manage list` is a fleet view for the same reason: it answers "what am I paying for", which
+is not a per-repo question.
+
+The second reason is the runtime key. It sits beside the record at mode 0600, and inside a git
+working tree the only thing between a live key and a commit is a `.gitignore` line — in a repo
+whose builder agent runs `git add -A`.
+
+**Never rebuild these paths by hand.** Ask for them:
+
+```bash
+run_record.py dir                 # where a NEW run's files go
+run_record.py dir <run-id>        # where THAT run's files are
+run_record.py path <run-id>       # its record; the .key/.bundle/-artifacts sit beside it
+```
+
+Records written before the move still live at `<repo>/.sandbox/runs`. They are read from there,
+stay writable in place so an in-flight run does not lose its key, and `list` unions both stores —
+a record that went invisible would be a key nobody revokes. `run_record.py migrate --yes` moves
+them over; `list` and `dir` print a one-line hint on **stderr** while any remain.
 
 ---
 
@@ -43,7 +73,7 @@ float, everything else stays a string. The literal `null` sets a field back to `
 The runtime key lives in a **separate file**:
 
 ```
-.sandbox/runs/<run-id>.key      mode 600, bare key + newline
+~/.local/state/sbx/runs/<run-id>.key      mode 600, bare key + newline
 ```
 
 The JSON record is greppable and gets shown in reports; the key never goes near it. CREATE writes

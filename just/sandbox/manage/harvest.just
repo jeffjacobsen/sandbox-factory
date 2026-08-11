@@ -19,7 +19,7 @@
 # disconnected history. Free integrity check on the return trip.
 #
 # NOT A SEVENTH PHASE. It writes nothing to the run record — the bundle's existence
-# at .sandbox/runs/<id>.bundle IS the record, the same reasoning that makes
+# beside that record in the host state store IS the record, the same reasoning that makes
 # `.agent-started` a sentinel file rather than a field. The schema stays closed.
 #
 # IDEMPOTENT: re-running overwrites the bundle and force-updates the ref. It only
@@ -34,7 +34,8 @@ harvest RUN_ID:
 
     RR="sandbox_mount/host/run_record.py"
     RUN_ID="{{ RUN_ID }}"
-    BUNDLE=".sandbox/runs/$RUN_ID.bundle"
+    RUNS=$("$RR" dir "$RUN_ID")
+    BUNDLE="$RUNS/$RUN_ID.bundle"
     BRANCH="sbx/$RUN_ID"
     DEST="refs/sandbox/$RUN_ID"
     # Same options teardown uses: BatchMode so this never sits at a prompt,
@@ -82,7 +83,7 @@ harvest RUN_ID:
     esac
     read -r _ TIP COUNT <<< "$OUT"
 
-    mkdir -p .sandbox/runs
+    mkdir -p "$RUNS"
     scp "${SSH_OPTS[@]}" -q "$VM".exe.xyz:/tmp/harvest.bundle "$BUNDLE" \
         || { echo "!! harvest: could not copy the bundle off $VM — VM left alone"; exit 1; }
 

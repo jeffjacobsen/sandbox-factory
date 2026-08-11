@@ -143,7 +143,7 @@ Where each column comes from:
 
 | Column | Source |
 |---|---|
-| run id, vm, limit, spend, closed | `.sandbox/runs/<id>.json` via `run_record.py list` |
+| run id, vm, limit, spend, closed | `~/.local/state/sbx/runs/<id>.json` via `run_record.py list` |
 | commit | run record `commit_sha` (the input), plus the run's own commits in the teardown bundle (the output) |
 | model (per agent) | trace db `agent_sessions.model` |
 | tokens, cost, status, request | trace db `sessions.total_tokens`, `total_cost`, `status`, `request` |
@@ -159,7 +159,7 @@ just sbx run cmd <id> "sqlite3 adws/adw_data/sssf.db 'select adw_id, status, tot
 just sbx run cmd <id> "sqlite3 adws/adw_data/sssf.db 'select agent, model, context_tokens from agent_sessions;'"
 
 # live spend on an arm's key, before teardown writes it into the record
-curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $(cat .sandbox/runs/<id>.key)" | jq '.data.usage'
+curl -sS https://openrouter.ai/api/v1/key -H "Authorization: Bearer $(cat ~/.local/state/sbx/runs/<id>.key)" | jq '.data.usage'
 ```
 
 `spend` in the run record is written by **teardown**, from the key's own usage read before revocation.

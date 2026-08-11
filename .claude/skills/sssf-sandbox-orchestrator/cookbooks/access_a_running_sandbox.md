@@ -78,7 +78,7 @@ it one turn at a time. This flow joins that same session interactively.
    The bit lives beside the run record:
 
    ```bash
-   test -e .sandbox/runs/<run-id>.agent-started
+   test -e ~/.local/state/sbx/runs/<run-id>.agent-started
    ```
 
    If it does not exist, send the first turn through the recipe — never hand-roll

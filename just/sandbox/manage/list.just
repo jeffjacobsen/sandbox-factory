@@ -1,9 +1,10 @@
 # just/sandbox/runs.just — readback. What ran, what it cost, which one won.
 #
 # This is the half of best-of-N that is not "launch N sandboxes". Launching is
-# easy; the decision needs the results side by side. Every phase writes to
-# .sandbox/runs/<id>.json, so these recipes are pure reads over that plus, while
-# a run is still alive, its trace db on the VM.
+# easy; the decision needs the results side by side. Every phase writes to the
+# run record, so these recipes are pure reads over `run_record.py list` plus,
+# while a run is still alive, its trace db on the VM. The list is account-wide,
+# not repo-wide — which is the point of a fleet view.
 #
 # Formatting is done in python rather than a shell read-loop: the record has
 # legitimately-empty fields (spend is null until teardown), and a tab-delimited

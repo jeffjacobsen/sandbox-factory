@@ -143,7 +143,7 @@ fill RUN_ID *SHA:
     if [ -z "$SECRET_LINES" ]; then
         echo "==> fill: sandbox.yaml declares no secrets — nothing written into the clone"
     else
-        KEY_FILE=".sandbox/runs/{{RUN_ID}}.key"
+        KEY_FILE="$("$RR" dir {{RUN_ID}})/{{RUN_ID}}.key"
         if [ ! -s "$KEY_FILE" ]; then
             echo "fill: no runtime key at $KEY_FILE — CREATE must mint it before FILL" >&2
             exit 1

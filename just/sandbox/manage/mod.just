@@ -46,6 +46,10 @@ doctor:
     chk "OPENROUTER_PROVISIONING_KEY set"  '[ -n "${OPENROUTER_PROVISIONING_KEY:-}" ]'
     chk "  ...and mints (management key)"  '[ "$KEYCODE" = "200" ]'
     chk "run_record helper runs"           'sandbox_mount/host/run_record.py list'
+    # Writable, not merely resolvable: the store is created on the first mount,
+    # and a create that cannot write the record mints a key with nowhere to
+    # record it — the one failure that leaves money spending untracked.
+    chk "run store writable"               'mkdir -p "$(sandbox_mount/host/run_record.py dir)" && [ -w "$(sandbox_mount/host/run_record.py dir)" ]'
     # The manifest is what makes the phases repo-agnostic, so a broken one is a
     # mount that fails in FILL or OBSERVE — after a billable VM exists. Every
     # rule it enforces (DNS-safe name, ports in the proxy's range, exactly one

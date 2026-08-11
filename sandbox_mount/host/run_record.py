@@ -5,7 +5,7 @@ Each phase (create, fill, setup, execute, observe, teardown) is a separate
 process, so nothing survives between them except what is on disk. Teardown has
 no other way to learn which OpenRouter key to revoke: lose the record and the
 key is unrevokable and keeps burning credit. One JSON file per run, keyed by
-run_id, under .sandbox/runs/ (gitignored).
+run_id, in the host state store (see below).
 
 Usage:
     run_record.py create  <run-id>
@@ -14,10 +14,34 @@ Usage:
     run_record.py close   <run-id>
     run_record.py list
     run_record.py path    <run-id>
+    run_record.py dir     [run-id]
+    run_record.py migrate [--yes]
     run_record.py new-id  <task>
 
 `get <run-id> <field>` prints the bare value so shell can capture it:
     RUN_VM=$(sandbox_mount/host/run_record.py get my-run vm_name)
+
+`dir` is what the recipes ask for the run's sidecar files -- the .key, the
+.bundle, the -artifacts directory. Never rebuild those paths by hand: the store
+moved once already and anything that hardcodes it silently misses half a fleet.
+
+WHERE THE STORE LIVES, and why it is not in the repo:
+
+    $SBX_STATE_DIR/runs, else $XDG_STATE_HOME/sbx/runs, else ~/.local/state/sbx/runs
+
+The state this holds is scoped to an ACCOUNT -- one exe.dev account, one
+OpenRouter account -- while a repo is scoped to a project. `reap` lists every
+sbx- key on the account and every VM on the account, then joins that against
+these records; with the store inside a repo, mounting from a second repo gives
+you two partial views of one account and a key can hide in the gap. Second
+reason, equally load-bearing: the runtime key sits beside the record at mode
+0600, and inside a git working tree the only thing between a live key and a
+commit is a .gitignore line, in a repo whose builder agent runs `git add -A`.
+
+Records written before the move still live at <repo>/.sandbox/runs. They are
+read from there and stay writable in place, so a run that is mid-flight when the
+store moves does not lose its key -- and `list` unions both locations, because a
+record that goes invisible is a key nobody revokes. `migrate` moves them over.
 
 Stdlib only, on purpose: this runs on the host before any toolchain exists and
 must never be the reason a teardown cannot start.
@@ -35,7 +59,24 @@ from pathlib import Path
 
 # sandbox_mount/host/run_record.py -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNS_DIR = REPO_ROOT / ".sandbox" / "runs"
+
+# Where records lived before the store moved out of the repo. Resolved against
+# THIS FILE, not the cwd: a legacy record belongs to the checkout that created
+# it, and every recipe already cd's to justfile_directory() anyway.
+LEGACY_RUNS_DIR = REPO_ROOT / ".sandbox" / "runs"
+
+
+def _runs_dir() -> Path:
+    """The active store. Env first so a fleet can be pointed somewhere else."""
+    override = os.environ.get("SBX_STATE_DIR")
+    if override:
+        return Path(override).expanduser() / "runs"
+    xdg = os.environ.get("XDG_STATE_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "state"
+    return base / "sbx" / "runs"
+
+
+RUNS_DIR = _runs_dir()
 
 # The closed schema. Every field is referenced by name somewhere in the six
 # phases, so a typo in a `set` is a silent data loss bug -- reject unknown keys
@@ -71,8 +112,20 @@ def _now() -> str:
 
 
 def path(run_id: str) -> Path:
-    """Where this run's record lives. Does not create anything."""
-    return RUNS_DIR / f"{run_id}.json"
+    """Where this run's record lives. Does not create anything.
+
+    A record already sitting in the legacy store keeps its address, so an
+    in-flight run stays coherent across the move: `set` rewrites it where it is
+    instead of forking a second copy in the new store. New runs land in the new
+    store. The recipes derive the .key, .bundle and -artifacts paths from this,
+    so those follow the record without knowing either location.
+    """
+    primary = RUNS_DIR / f"{run_id}.json"
+    if not primary.exists():
+        legacy = LEGACY_RUNS_DIR / f"{run_id}.json"
+        if legacy.exists():
+            return legacy
+    return primary
 
 
 def new_run_id(task: str) -> str:
@@ -161,20 +214,93 @@ def close(run_id: str) -> dict:
 
 
 def list_runs() -> list[dict]:
-    """Every record, newest first."""
-    if not RUNS_DIR.is_dir():
+    """Every record, newest first — from BOTH stores.
+
+    The union is not a convenience. `reap` walks this list to decide which
+    sbx- keys on the account nobody owns any more; a legacy record that stopped
+    being listed the moment the new store got its first run would read as an
+    orphan, and reap would revoke a live run's key. Same reason the malformed
+    case raises instead of skipping: invisible here means unrevoked out there.
+    """
+    records: dict[str, dict] = {}
+    # Legacy first, so a record present in both is represented by the new copy —
+    # the state `migrate` leaves behind if it is interrupted mid-move.
+    for d in (LEGACY_RUNS_DIR, RUNS_DIR):
+        if not d.is_dir():
+            continue
+        for f in d.glob("*.json"):
+            try:
+                record = json.loads(f.read_text())
+            except (OSError, ValueError) as e:
+                raise ValueError(f"unreadable run record {f}: {e}") from None
+            records[record.get("run_id") or f.stem] = record
+    out = list(records.values())
+    out.sort(key=lambda r: (r.get("created_at") or "", r.get("run_id") or ""), reverse=True)
+    return out
+
+
+def legacy_ids() -> list[str]:
+    """Run ids still sitting in the pre-move store, oldest name first."""
+    if not LEGACY_RUNS_DIR.is_dir():
         return []
-    records = []
-    for f in RUNS_DIR.glob("*.json"):
-        try:
-            records.append(json.loads(f.read_text()))
-        except (OSError, ValueError) as e:
-            # Loud, not skipped. `reap` walks this list to find keys nobody
-            # revoked; a record quietly dropped for being malformed is a key
-            # that quietly keeps spending.
-            raise ValueError(f"unreadable run record {f}: {e}") from None
-    records.sort(key=lambda r: (r.get("created_at") or "", r.get("run_id") or ""), reverse=True)
-    return records
+    return sorted(f.stem for f in LEGACY_RUNS_DIR.glob("*.json"))
+
+
+def _hint() -> None:
+    """One line, on stderr, when records are still in the old place.
+
+    stderr because every recipe captures stdout of `get` and `dir`; a hint on
+    stdout would end up inside a VM name. Only the two fleet-wide commands call
+    this — a mount makes dozens of record calls and a hint on each is noise
+    nobody reads.
+    """
+    stale = legacy_ids()
+    if stale:
+        print(
+            f"run_record: {len(stale)} record(s) still in {LEGACY_RUNS_DIR} "
+            f"— they are read and listed from there; `run_record.py migrate --yes` moves them",
+            file=sys.stderr,
+        )
+
+
+# The sidecars that travel with a record. Sorted longest-first is irrelevant
+# here, but the set is: migrate that moves the .json and leaves the .key behind
+# has moved the run's identity away from its credential.
+_SIDECARS = (".key", ".bundle", ".agent-started")
+
+
+def migrate(apply: bool) -> int:
+    """Move legacy records and their sidecars into the active store."""
+    stale = legacy_ids()
+    if not stale:
+        print(f"migrate: nothing in {LEGACY_RUNS_DIR} — already on {RUNS_DIR}")
+        return 0
+    if not apply:
+        print(f"migrate: {len(stale)} record(s) would move to {RUNS_DIR} (dry run; pass --yes)")
+        for run_id in stale:
+            print(f"  {run_id}")
+        return 0
+
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for run_id in stale:
+        for name in (f"{run_id}.json", *(f"{run_id}{s}" for s in _SIDECARS)):
+            src = LEGACY_RUNS_DIR / name
+            if not src.exists():
+                continue
+            dst = RUNS_DIR / name
+            if dst.exists():
+                print(f"migrate: {dst} already exists — leaving {src} in place", file=sys.stderr)
+                continue
+            os.replace(src, dst)
+            moved += 1
+        art = LEGACY_RUNS_DIR / f"{run_id}-artifacts"
+        if art.is_dir() and not (RUNS_DIR / art.name).exists():
+            os.replace(art, RUNS_DIR / art.name)
+            moved += 1
+        print(f"  moved {run_id}")
+    print(f"migrate: {len(stale)} record(s), {moved} file(s) -> {RUNS_DIR}")
+    return 0
 
 
 def _write(run_id: str, record: dict) -> None:
@@ -217,6 +343,24 @@ def main(argv: list[str]) -> int:
 
     if cmd == "list":
         print(json.dumps(list_runs(), indent=2))
+        _hint()
+        return 0
+
+    if cmd == "migrate":
+        if args and args != ["--yes"]:
+            print("usage: run_record.py migrate [--yes]", file=sys.stderr)
+            return 2
+        return migrate(args == ["--yes"])
+
+    if cmd == "dir":
+        # Bare `dir` is where a NEW run goes; `dir <run-id>` is where THAT run's
+        # files are, which may still be the legacy store.
+        if len(args) > 1:
+            print("usage: run_record.py dir [run-id]", file=sys.stderr)
+            return 2
+        print(path(args[0]).parent if args else RUNS_DIR)
+        if not args:
+            _hint()
         return 0
 
     if cmd == "new-id":

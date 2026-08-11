@@ -16,7 +16,7 @@ reap *FLAGS:
 
     API="https://openrouter.ai/api/v1"
     PREFIX="sbx-"
-    RUNS=".sandbox/runs"
+    RR="sandbox_mount/host/run_record.py"
     SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15)
 
     # Interpolating the variadic straight into a `for ... in` list is a syntax
@@ -44,15 +44,25 @@ reap *FLAGS:
         || { echo "!! could not list keys"; exit 1; }
     ssh "${SSH_OPTS[@]}" exe.dev ls --json > "$TMPD/vms.json" 2>/dev/null || echo '{"vms":[]}' > "$TMPD/vms.json"
 
+    # Records come from `run_record.py list`, never from globbing a directory.
+    # This join is the reason the store moved out of the repo: it reasons about
+    # the whole ACCOUNT, so it has to see every record on the machine, including
+    # any still in a repo's legacy .sandbox/runs. A record this cannot see reads
+    # as "no record left" below — and the fallback would then judge a live run
+    # by its VM alone. `list` unions both stores and exits non-zero on an
+    # unreadable record, which under `set -e` stops the reap: an unaccountable
+    # key must never be silently skipped.
+    "$RR" list > "$TMPD/runs.json"
+
     # Selection in python (stdlib, same reason run_record.py is): three-way join of
     # key list x vm list x run records is not a thing to write in jq.
-    RUNS="$RUNS" PREFIX="$PREFIX" python3 - "$TMPD/keys.json" "$TMPD/vms.json" > "$TMPD/plan.tsv" <<'PY'
+    PREFIX="$PREFIX" python3 - "$TMPD/keys.json" "$TMPD/vms.json" "$TMPD/runs.json" > "$TMPD/plan.tsv" <<'PY'
     import json, os, sys
     from pathlib import Path
 
     keys = json.loads(Path(sys.argv[1]).read_text()).get("data", [])
     live_vms = {v.get("vm_name") for v in json.loads(Path(sys.argv[2]).read_text()).get("vms", [])}
-    runs_dir = Path(os.environ["RUNS"])
+    records = {r.get("run_id"): r for r in json.loads(Path(sys.argv[3]).read_text())}
     prefix = os.environ["PREFIX"]
 
     for k in keys:
@@ -60,17 +70,11 @@ reap *FLAGS:
         if not name.startswith(prefix):
             continue  # personal key. Never considered, never printed as a candidate.
         run_id = name[len(prefix):]
-        rec_path = runs_dir / f"{run_id}.json"
         # No record left? Fall back to the run id: create.just passes it as --name,
         # so vm_name == run_id unless the record says otherwise.
+        rec = records.get(run_id)
         closed, vm = None, run_id
-        if rec_path.is_file():
-            try:
-                rec = json.loads(rec_path.read_text())
-            except ValueError as e:
-                # Loud: an unreadable record is a key nobody can account for.
-                print(f"!! unreadable run record {rec_path}: {e}", file=sys.stderr)
-                sys.exit(1)
+        if rec is not None:
             closed = rec.get("closed_at")
             vm = rec.get("vm_name") or run_id
 

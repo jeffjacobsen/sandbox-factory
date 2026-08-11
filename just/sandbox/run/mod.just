@@ -72,8 +72,8 @@ agent RUN_ID PROMPT:
     #   - probing the VM for the session costs an extra ssh round trip on every
     #     turn and depends on Claude Code's on-disk session layout, which we have
     #     NOT verified — an implementation detail is a bad source of truth.
-    # The sentinel path is derived from the record's own path so it inherits
-    # .sandbox/runs/ (gitignored) rather than hardcoding it here.
+    # The sentinel path is derived from the record's own path so it inherits the
+    # host state store rather than hardcoding it here.
     REC=$("$RR" path {{RUN_ID}})
     STARTED="${REC%.json}.agent-started"
 

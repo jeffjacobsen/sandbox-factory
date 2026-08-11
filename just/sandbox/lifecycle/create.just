@@ -127,8 +127,11 @@ create RUN_ID *FLAGS:
     # ── 4. the runtime key (LAST — see the header for why) ─────────────────────
     # The 'sbx-' prefix is load-bearing: it is how `reap` tells managed keys from
     # the engineer's personal ones. Never mint without it.
-    KEY_FILE=".sandbox/runs/${RUN_ID}.key"
-    mkdir -p .sandbox/runs
+    # The record exists by now, so `dir` resolves to the store holding it —
+    # never a path built here. The key must land beside its own record.
+    RUNS=$("$RR" dir "$RUN_ID")
+    KEY_FILE="$RUNS/${RUN_ID}.key"
+    mkdir -p "$RUNS"
     BODY="$(mktemp)"   # 0600 by mktemp; holds the secret until it is on disk
     CODE="$(curl -sS -o "$BODY" -w '%{http_code}' https://openrouter.ai/api/v1/keys \
         -H "Authorization: Bearer $OPENROUTER_PROVISIONING_KEY" \

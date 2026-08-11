@@ -155,7 +155,7 @@ cd app && ANTHROPIC_API_KEY=implicit ANTHROPIC_BASE_URL=https://llm.int.exe.xyz 
 - **The session uuid is minted once, at `create`**, and lives in the run record. `claude
   --session-id` demands a uuid and `--resume` needs the same one on every later turn.
 - **First call vs later call** is decided by a host sentinel next to the run record,
-  `.sandbox/runs/<run-id>.agent-started`. It is touched **only after a turn succeeds**, because a
+  `~/.local/state/sbx/runs/<run-id>.agent-started`. It is touched **only after a turn succeeds**, because a
   first call that died never created a session and `--resume` on a missing session would fail
   forever. The run record's schema is closed, which is why this is a file and not a field.
 - **Synchronous by design.** The whole point is to read the reply and send the next turn.

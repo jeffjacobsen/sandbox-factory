@@ -26,7 +26,7 @@ teardown RUN_ID *FLAGS:
 
     RR="sandbox_mount/host/run_record.py"
     RUN_ID="{{ RUN_ID }}"
-    RUNS=".sandbox/runs"
+    RUNS=$("$RR" dir "$RUN_ID")
     KEY_FILE="$RUNS/$RUN_ID.key"
     ART="$RUNS/$RUN_ID-artifacts"
     API="https://openrouter.ai/api/v1"

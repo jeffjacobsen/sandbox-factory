@@ -23,7 +23,7 @@ tree stays clean and a harvested branch carries only the run's own work.
 | Phase | Runs where | Needs | Gate | Writes to the run record |
 | --- | --- | --- | --- | --- |
 | **create** `RUN_ID [--limit N]` | host only — exe.dev control plane + OpenRouter mint API. Nothing lands on the VM. | `ssh`, `curl`, `python3` on PATH; `OPENROUTER_PROVISIONING_KEY` in `.env`; hostname-safe run id (≤63 chars) | ssh answers on `<vm>.exe.xyz` within 60s | `run_id`, `created_at`, `vm_name`, `https_url`, `key_hash`, `limit`, `session_id` |
-| **fill** `RUN_ID [SHA]` | host-triggered, the clone runs inside the VM | `vm_name` in the record; `.sandbox/runs/<id>.key` non-empty | checked-out HEAD == the resolved pin (when a SHA/tag/branch was given). Unpinned: HEAD is reported and recorded, not gated | `commit_sha` |
+| **fill** `RUN_ID [SHA]` | host-triggered, the clone runs inside the VM | `vm_name` in the record; `~/.local/state/sbx/runs/<id>.key` non-empty | checked-out HEAD == the resolved pin (when a SHA/tag/branch was given). Unpinned: HEAD is reported and recorded, not gated | `commit_sha` |
 | ↳ *the run branch* | inside, at the end of the clone step | — | none — `git switch -c sbx/<run-id>` at existing HEAD adds no commit and changes no file, so assertion **A** still compares the same sha | *nothing* |
 | **setup** `RUN_ID` | inside — `ssh <vm> 'bash app/sandbox_mount/guest/provision.sh'`, then the gate | `vm_name` **and** `commit_sha` in the record | five assertions **A–E**, all must pass | *nothing* |
 | **execute** `RUN_ID "PROMPT"` | host-triggered, `just adw sdlc` runs inside, detached | `vm_name` in the record; a passed SETUP | the remote shell returns a numeric PID (non-numeric = the remote printed an error where the PID should be) | `pid` |
@@ -35,13 +35,13 @@ Three recipes sit outside the phase list and write nothing to the record:
 | Recipe | Shape | Notes |
 | --- | --- | --- |
 | `just sbx run cmd RUN_ID '<cmd>'` | synchronous, prints output, `cd app &&` first | generic escape hatch. `{{CMD}}` is interpolated verbatim so your pipes/globs/quotes reach the remote shell intact |
-| `just sbx manage harvest RUN_ID` | synchronous, reads the box, writes `refs/sandbox/<run-id>` | bundles `<commit_sha>..sbx/<run-id>` on the VM, copies it to `.sandbox/runs/<id>.bundle`, verifies, fetches. **Non-destructive and idempotent** — run it the moment a run commits, don't wait for teardown. Writes nothing to the record: the bundle's existence *is* the record, same as `.agent-started`. A run filled before run branches existed gets `sbx/<run-id>` created at HEAD, which touches no files |
-| `just sbx run agent RUN_ID "PROMPT"` | synchronous Claude Code turn inside the box | reads `session_id`; first call uses `--session-id`, every later one `--resume`. "Has it started" is a **host sentinel** `.sandbox/runs/<id>.agent-started`, touched only after a successful turn — the record schema is closed and has nowhere to put a boolean, and probing the VM's session layout would depend on an unverified implementation detail. Runs on exe.dev's key-free gateway (`ANTHROPIC_BASE_URL=https://llm.int.exe.xyz`, `ANTHROPIC_API_KEY=implicit`), **not** OpenRouter |
+| `just sbx manage harvest RUN_ID` | synchronous, reads the box, writes `refs/sandbox/<run-id>` | bundles `<commit_sha>..sbx/<run-id>` on the VM, copies it to `~/.local/state/sbx/runs/<id>.bundle`, verifies, fetches. **Non-destructive and idempotent** — run it the moment a run commits, don't wait for teardown. Writes nothing to the record: the bundle's existence *is* the record, same as `.agent-started`. A run filled before run branches existed gets `sbx/<run-id>` created at HEAD, which touches no files |
+| `just sbx run agent RUN_ID "PROMPT"` | synchronous Claude Code turn inside the box | reads `session_id`; first call uses `--session-id`, every later one `--resume`. "Has it started" is a **host sentinel** `~/.local/state/sbx/runs/<id>.agent-started`, touched only after a successful turn — the record schema is closed and has nowhere to put a boolean, and probing the VM's session layout would depend on an unverified implementation detail. Runs on exe.dev's key-free gateway (`ANTHROPIC_BASE_URL=https://llm.int.exe.xyz`, `ANTHROPIC_API_KEY=implicit`), **not** OpenRouter |
 
 And the fleet-wide backstop, which takes no run id:
 
 `just sbx manage reap [--yes]` — dry run by default. Joins the OpenRouter key list × `ssh exe.dev ls --json`
-× `.sandbox/runs/*.json` and revokes every `sbx-*` key whose record is closed or whose VM no
+× ``run_record.py list`` and revokes every `sbx-*` key whose record is closed or whose VM no
 longer exists. **The `sbx-` prefix is the entire safety model**: personal keys carry no prefix,
 and the prefix is re-asserted at the point of deletion, not just at selection.
 
@@ -112,7 +112,7 @@ teardown can find.
    failed VM after a successful mint orphans a **key**, which spends money invisibly. Trade the
    visible failure for the invisible one, every time.
 3. **Key last**, named `sbx-<run-id>`, `limit` default `50.00`. The secret is written straight to
-   `.sandbox/runs/<id>.key` at mode 600 by a python heredoc that prints only the hash — the key
+   `~/.local/state/sbx/runs/<id>.key` at mode 600 by a python heredoc that prints only the hash — the key
    never reaches stdout, a log, a shell variable, or the JSON record.
 
 Nothing in CREATE ever destroys a VM. Every failure path prints the teardown command and leaves

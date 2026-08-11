@@ -247,7 +247,7 @@
       <dt>sandbox_mount/guest/provision.sh</dt><dd>Runs <em>inside</em>. Strip, install, configure, warm, sentinel. Survives its own strip.</dd>
       <dt>sandbox_mount/strip_manifest.txt</dt><dd>Declarative host-only paths. Deleted from the mounted copy.</dd>
       <dt>sandbox_mount/guest/models.json.tmpl</dt><dd>The pi model registry: one <code>openrouter</code> provider block with all nine roster ids.</dd>
-      <dt>.sandbox/runs/&lt;run-id&gt;.json</dt><dd>Run record. Gitignored. The only state shared across phases.</dd>
+      <dt>~/.local/state/sbx/runs/&lt;run-id&gt;.json</dt><dd>Run record. Outside every checkout — the store is per machine, since <code>reap</code> and <code>manage list</code> account for a whole exe.dev + OpenRouter account, and the runtime key beside it must never sit in a working tree. Override with <code>$SBX_STATE_DIR</code>. The only state shared across phases.</dd>
     </dl>
     <h3>Modified files</h3>
     <dl>
@@ -427,8 +427,9 @@ curl -s https://openrouter.ai/api/v1/keys \
       <aside><strong>Artifacts are not enough.</strong> SSSF commits plan, code and docs separately; copying
       files down loses that history.
 <pre><code class="language-bash">ssh &lt;vm&gt; 'cd app &amp;&amp; git bundle create /tmp/run.bundle main'
-scp &lt;vm&gt;.exe.xyz:/tmp/run.bundle .sandbox/runs/&lt;run-id&gt;.bundle
-git fetch .sandbox/runs/&lt;run-id&gt;.bundle main:sandbox/&lt;run-id&gt;</code></pre>
+RUNS=$(sandbox_mount/host/run_record.py dir &lt;run-id&gt;)   # never hardcode the store
+scp &lt;vm&gt;.exe.xyz:/tmp/run.bundle "$RUNS/&lt;run-id&gt;.bundle"
+git fetch "$RUNS/&lt;run-id&gt;.bundle" main:sandbox/&lt;run-id&gt;</code></pre>
       Order matters: artifacts out &rarr; revoke &rarr; destroy. A crash between revoke and destroy leaves a
       dead key rather than a live one.</aside>
     </div>
@@ -436,7 +437,7 @@ git fetch .sandbox/runs/&lt;run-id&gt;.bundle main:sandbox/&lt;run-id&gt;</code>
     <h3>Build Phase 3 &mdash; Integration &amp; polish</h3>
     <div class="cklist">
     <label class="ck"><input type="checkbox" data-ck="i1" checked><span><code>just mount</code> chains create &rarr; fill &rarr; setup &rarr; observe. <strong>Never teardown.</strong></span></label>
-    <label class="ck"><input type="checkbox" data-ck="i2"><span><code>just runs</code> &mdash; list <code>.sandbox/runs/*.json</code> with status, model, spend</span></label>
+    <label class="ck"><input type="checkbox" data-ck="i2"><span><code>just runs</code> &mdash; list <code>run_record.py list</code> with status, model, spend</span></label>
     <label class="ck"><input type="checkbox" data-ck="i3"><span><code>just compare &lt;run-ids&gt;</code> &mdash; the ranked best-of-N table</span></label>
     <label class="ck"><input type="checkbox" data-ck="i4"><span>Patch <code>exedev vm snapshot</code> to <code>sync</code> the source before <code>cp</code></span></label>
     <label class="ck"><input type="checkbox" data-ck="i5"><span>Update SSSF README + cookbooks for <code>just sdlc</code> &rarr; <code>just adw sdlc</code></span></label>
@@ -665,7 +666,7 @@ agent RUN_ID PROMPT:
     <h3>Run record — the only state shared across phases</h3>
     <p>Each phase is a separate process, so <code>teardown</code> has no way to know which key to
     revoke unless something persists. One JSON file per run, keyed by <code>RUN_ID</code>.</p>
-<pre><code class="language-json">// .sandbox/runs/demo-01.json
+<pre><code class="language-json">// ~/.local/state/sbx/runs/demo-01.json
 {
   "run_id":     "demo-01",
   "vm_name":    "demo-01",

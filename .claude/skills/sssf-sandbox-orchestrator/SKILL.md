@@ -62,6 +62,19 @@ Two things it does **not** cover, so check them yourself:
 | Entry point | `just sbx mount`, `just sbx lifecycle execute`, `just sbx lifecycle teardown` | `just adw sdlc "..."` |
 | Credential | exe.dev account + OpenRouter **provisioning** key | one disposable **runtime** key, $50 cap |
 
+### The run store is per MACHINE, not per repo
+
+Run records, runtime keys, bundles and artifacts live in
+`${SBX_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/sbx}/runs` — outside every checkout. `reap` and
+`manage list` reason about a whole exe.dev + OpenRouter account, so a per-repo store would give you
+one partial view per repo and a key could hide in the gap; and a runtime key inside a git working
+tree is one `git add -A` away from being committed.
+
+**Never build a path under it by hand** — `run_record.py dir [run-id]` and `path <run-id>` are what
+the recipes ask, and everything for a run (`.key`, `.bundle`, `-artifacts`, `.agent-started`) sits
+beside its record. Records from before the move still work where they are and are still listed;
+`run_record.py migrate --yes` relocates them.
+
 ### `sandbox.yaml` — which repo, not how to mount one
 
 The phases carry no project constants. The clone URL, the provision script, the secret files, the
@@ -141,7 +154,7 @@ alive**.
 |---|---|
 | [references/phases.md](references/phases.md) | what each of the six phases does, in order, and why the order is that order |
 | [references/kickoff_paths.md](references/kickoff_paths.md) | the two ways work enters a box: direct (`lifecycle execute`, a command) vs agent-mediated (`run agent`, a delegation) |
-| [references/run_record.md](references/run_record.md) | `.sandbox/runs/<id>.json` — the closed schema, who writes each field, who reads it |
+| [references/run_record.md](references/run_record.md) | `~/.local/state/sbx/runs/<id>.json` — the closed schema, who writes each field, who reads it |
 | [references/models.md](references/models.md) | the roster, per-million rates, the mandatory four-field `cost` block, ZDR |
 | [references/gotchas.md](references/gotchas.md) | every trap that cost a debugging cycle, with the symptom it produces |
 
@@ -158,7 +171,7 @@ alive**.
 3. **A gate failure means STOP and diagnose, never destroy.** The VM is left alive deliberately.
    Read the failing assertion, `just sbx run cmd <id> '...'` your way to the cause, fix it, re-run
    `just sbx lifecycle setup`. Re-running setup is safe.
-4. **Never touch a key.** The runtime key lives at `.sandbox/runs/<id>.key` (0600) and inside the
+4. **Never touch a key.** The runtime key lives at `~/.local/state/sbx/runs/<id>.key` (0600) and inside the
    VM's `app/.env`. Never print it, never copy it, never pass it over ssh — `setup`'s gate spends it
    from inside the box for exactly that reason. The provisioning key never leaves the host.
 5. **Never mint outside `create`.** The `sbx-` prefix is the entire safety model for `reap`; the

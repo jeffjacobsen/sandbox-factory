@@ -209,7 +209,7 @@ to their open weights on Western hosts. Under ZDR you are not talking to a Chine
 
 | | Provisioning key | Runtime key |
 | --- | --- | --- |
-| Lives in | `OPENROUTER_PROVISIONING_KEY` in host `.env` | `.sandbox/runs/<id>.key` (600) → `app/.env` on the VM → baked into `~/.pi/agent/models.json` |
+| Lives in | `OPENROUTER_PROVISIONING_KEY` in host `.env` | `~/.local/state/sbx/runs/<id>.key` (600) → `app/.env` on the VM → baked into `~/.pi/agent/models.json` |
 | Lifetime | long-lived; the only long-lived secret in the system | one sandbox |
 | Can do | mint + revoke only — it **cannot do inference**, it returns `User not found` | inference only |
 | Enters a sandbox | **never** | yes, that is the point |

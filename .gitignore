@@ -157,5 +157,7 @@ apps/inkwell/inkwell.db*
 
 *.mov
 
-# sandbox mount: per-run records hold live OpenRouter key hashes
+# sandbox mount: the run store moved to ~/.local/state/sbx/runs so a live runtime
+# key can never sit in a working tree. Kept ignored for records written before
+# that move — run_record.py still reads them here until `migrate` relocates them.
 .sandbox/

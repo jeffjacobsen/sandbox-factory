@@ -54,11 +54,11 @@ Order is the design: **record → VM → key.**
 
 ```
 run id:  inkwell-e2e-20260804-e08747
-record:  .sandbox/runs/inkwell-e2e-20260804-e08747.json
+record:  ~/.local/state/sbx/runs/inkwell-e2e-20260804-e08747.json
 vm:      creating inkwell-e2e-20260804-e08747 (ssh exe.dev new --tag inkwell) ...
 vm:      inkwell-e2e-20260804-e08747  ->  https://inkwell-e2e-20260804-e08747.exe.xyz
 key:     sbx-inkwell-e2e-20260804-e08747  limit $50.00  hash <64 hex>
-key:     secret written to .sandbox/runs/<run-id>.key (0600) — FILL injects it
+key:     secret written to ~/.local/state/sbx/runs/<run-id>.key (0600) — FILL injects it
 ssh:     waiting for <run-id>.exe.xyz (up to 60s) ...
 ssh:     up after 4s
 session: 8941a9f0-ac02-4678-be96-d578ac224c3b
@@ -160,13 +160,13 @@ UI on 4600 owner-gated (307 anonymously, which is correct), both recorded into t
 
 ## What each phase writes to the run record
 
-The record (`.sandbox/runs/<run-id>.json`, gitignored, 0600) is the **only** state shared across
+The record (`~/.local/state/sbx/runs/<run-id>.json`, outside the repo, 0600) is the **only** state shared across
 phases — each phase is a separate process. Its schema is closed: `run_record.py` rejects unknown
 keys, so a typo in a `set` fails loudly instead of silently losing data.
 
 | Phase | Writes |
 |---|---|
-| create | `run_id`, `created_at`, `vm_name`, `https_url`, `key_hash`, `limit`, `session_id` — plus the secret to `.sandbox/runs/<run-id>.key` (0600) |
+| create | `run_id`, `created_at`, `vm_name`, `https_url`, `key_hash`, `limit`, `session_id` — plus the secret to `~/.local/state/sbx/runs/<run-id>.key` (0600) |
 | fill | `commit_sha` (the sha actually checked out, never the one asked for) — plus `app/.env` on the VM |
 | setup | **nothing** — it only reads `vm_name` and `commit_sha` |
 | execute | `pid` |

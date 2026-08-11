@@ -137,8 +137,8 @@ on failure, and `just sbx run cmd <run-id> 'tail -40 ~/visualizer.log'` gets the
    `just sbx run agent` work goes through exe.dev's key-free gateway and does not appear there.
 
 Everything above stays on the VM until teardown pulls it: `teardown` copies `specs/`, `app_docs/`,
-`adws/adw_data/sssf.db` and `run.log` into `.sandbox/runs/<run-id>-artifacts/`, plus a
-`git bundle` of every commit at `.sandbox/runs/<run-id>.bundle` — which you inspect locally with:
+`adws/adw_data/sssf.db` and `run.log` into `~/.local/state/sbx/runs/<run-id>-artifacts/`, plus a
+`git bundle` of every commit at `~/.local/state/sbx/runs/<run-id>.bundle` — which you inspect locally with:
 
 ```bash
 just sbx manage harvest <run-id>

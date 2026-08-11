@@ -35,15 +35,15 @@ already gone, teardown falls back to the provisioning `GET /api/v1/keys` list, w
 
 **2 — artifacts before destroy.** One tar over one ssh round trip: `specs/`, `app_docs/`,
 `adws/adw_data/sssf.db`, `run.log`, filtered by `ls -d` so a run that died before writing `app_docs/`
-is not an error. Lands in `.sandbox/runs/<run-id>-artifacts/`.
+is not an error. Lands in `~/.local/state/sbx/runs/<run-id>-artifacts/`.
 
 **3 — the bundle, because file copies LOSE history.** SSSF commits the plan, the code and the docs as
 **separate commits**. The shape of the run is in the commit graph, not in the files. `git bundle
-create /tmp/run.bundle --all` on the VM, `scp` it down to `.sandbox/runs/<run-id>.bundle`. Read it
+create /tmp/run.bundle --all` on the VM, `scp` it down to `~/.local/state/sbx/runs/<run-id>.bundle`. Read it
 back locally without touching your branches:
 
 ```bash
-git fetch .sandbox/runs/<run-id>.bundle 'refs/heads/*:refs/heads/sandbox/<run-id>/*'
+git fetch ~/.local/state/sbx/runs/<run-id>.bundle 'refs/heads/*:refs/heads/sandbox/<run-id>/*'
 git log --oneline --graph sandbox/<run-id>/main
 ```
 
@@ -113,7 +113,7 @@ upstream still cannot reach a personal key.
 
 ### What it selects
 
-A three-way join of the key list, `ssh exe.dev ls --json`, and the run records in `.sandbox/runs/`. An
+A three-way join of the key list, `ssh exe.dev ls --json`, and the run records in `~/.local/state/sbx/runs/`. An
 `sbx-` key is orphaned when either:
 
 - its run record has a non-null `closed_at`, or
@@ -142,4 +142,4 @@ Be specific about this rather than hand-waving. Written, reviewed, never execute
 
 Everything upstream of it — create, fill, setup, execute/run/agent, observe — ran end to end on a real
 VM. When you run teardown for the first time, run it in the foreground, read every line, and check
-`.sandbox/runs/` for the artifacts and the bundle before you believe it.
+`~/.local/state/sbx/runs/` for the artifacts and the bundle before you believe it.
