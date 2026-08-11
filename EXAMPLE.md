@@ -121,10 +121,9 @@ sbx lifecycle setup fts5-search-20260811-984a34
 [setup] GATE PASSED — fts5-search-20260811-984a34 is healthy
 ```
 
-> **Since fixed everywhere.** The defect was in the *template*
+> **Since fixed.** The defect was in the *template*
 > (`.claude/skills/sssf/templates/sssf.config.yaml`), so every fresh
-> `/sssf install` stamped the same dead id. Corrected in `sandbox-factory` and
-> mirrored to `jeffjacobsen/sssf`.
+> `/sssf install` stamped the same dead id.
 >
 > The right id turned out to be `moonshotai/kimi-k3` — the model the roster
 > always meant, already declared in `models.json.tmpl`, and served by OpenRouter.
