@@ -138,8 +138,12 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
     # What the tree looked like before this agent got its hands on it. Every
     # send in this phase — first prompt, JSON retries, gate corrections — is
-    # measured against this one baseline.
+    # measured against this one baseline. The bytes go with it, so an
+    # out-of-scope change to work that was already uncommitted can be put back
+    # instead of only reported — the difference between a run that continues
+    # and a run that dies on someone else's scratch file.
     tree_before = permissions.snapshot(run)
+    preserved_before = permissions.preserve(run, tree_before)
 
     result = send(user_text)
     envelope, attempt = _parse_with_retries(run, phase, call, result, send)
@@ -176,7 +180,8 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     # accepted: an agent does not get to report success on a phase in which it
     # wrote somewhere it was not allowed to.
     try:
-        touched = permissions.enforce(run, phase, agent, tree_before)
+        touched = permissions.enforce(run, phase, agent, tree_before,
+                                      preserved_before)
     except permissions.PermissionBreach as breach:
         run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
                                      type="error", name="permission_breach",
@@ -233,10 +238,18 @@ def _agent_session_id(run, agent: AgentConfig) -> str:
 
 
 def _event_forwarder(run, phase: Phase, agent_name: str):
-    """One tool_call event per real tool call, with its exact args and result."""
+    """One tool_call event per real tool call, with its exact args and result —
+    plus one thinking / one agent_message event per COMPLETE assistant message.
+    Complete messages only, never message_update deltas: the extraction reads
+    message_end alone (see agent_pi.assistant_message_records)."""
     tracker = agent_pi.ToolCallTracker()
 
     def forward(event: dict) -> None:
+        for message in agent_pi.assistant_message_records(event):
+            run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                         type=message.pop("kind"),
+                                         name=message.pop("label"),
+                                         payload={**message, "agent": agent_name}))
         record = tracker.observe(event)
         if record is None:
             return

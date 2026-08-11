@@ -1,4 +1,4 @@
-1.0.0
+1.1.0
 # adws/adw_modules/ is VENDORED. It is stamped by `/sssf install` and belongs to
 # the skill, not to the repo it lands in. Editing a file here is a fork: the next
 # install will not merge your change, and `/sssf install --check` will report the

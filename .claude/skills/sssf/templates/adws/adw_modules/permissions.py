@@ -42,6 +42,21 @@ class PermissionBreach(RuntimeError):
     """An agent modified a path it was not permitted to modify."""
 
 
+# The `_roll_back` outcomes that leave the repo byte-for-byte as it was. The
+# docstring's reason for aborting — "the write already happened" — is true of a
+# destroyed file and false of these: an agent-created file that was unlinked, or
+# a tracked edit that was checked out, leaves nothing behind to re-prompt around.
+RECOVERED = {"deleted", "rolled back", "restored"}
+
+# ...but only as a slip. One phase producing more than this many out-of-scope
+# writes is a pattern, not an accident, and stops being forgiven.
+RECOVERED_LIMIT = 3
+
+# Per-file ceiling on what `preserve` will hold in memory for the length of a
+# phase. Anything larger keeps the old behaviour — reported, not restorable.
+PRESERVE_MAX_BYTES = 1 << 20
+
+
 def _git(args: list[str], cwd) -> str:
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     return result.stdout if result.returncode == 0 else ""
@@ -135,18 +150,60 @@ def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig) -> bool:
     return agent.writes is None          # None = unrestricted, [] = no repo writes
 
 
-def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str]) -> str:
+def preserve(run, tree: dict[str, str]) -> dict[str, bytes]:
+    """Capture the bytes of every already-dirty path, before an agent runs.
+
+    Without this, the module can only undo what an agent INTRODUCED — unlink a
+    file it created, `git checkout` an edit it made on top of a clean file. Work
+    that was already uncommitted when the phase opened was unrecoverable, and
+    unrecoverable is precisely what aborts a run. Holding the bytes turns the
+    module's worst case (`git checkout adws/`, the incident in the docstring
+    above) from "reported, gone" into "put back", which is both less damage and
+    one less dead run.
+
+    Reading is best-effort: a path that vanishes between snapshot and read, or
+    is too large to hold, simply is not preserved and keeps the old behaviour.
+    """
+    kept: dict[str, bytes] = {}
+    for path in tree:
+        target = Path(run.repo_root) / path
+        try:
+            if target.is_file() and target.stat().st_size <= PRESERVE_MAX_BYTES:
+                kept[path] = target.read_bytes()
+        except OSError:
+            continue
+    return kept
+
+
+def _restore(run, path: str, preserved: dict[str, bytes]) -> bool:
+    """Put a preserved path back exactly as it was. True if it is now restored."""
+    if path not in preserved:
+        return False
+    target = Path(run.repo_root) / path
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(preserved[path])
+        return True
+    except OSError:
+        return False
+
+
+def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str],
+               preserved: dict[str, bytes]) -> str:
     """Undo one unauthorized change. Returns a word describing what happened.
 
-    Only changes the agent INTRODUCED are undone. A path that was already dirty
-    when the agent started is left exactly as it is: the operator had
-    uncommitted work there, and discarding it to tidy up would be the same harm
-    this module exists to prevent, committed by the cleanup instead of the agent.
+    A path that was already dirty when the agent started is restored to the
+    bytes `preserve` captured, so the operator's uncommitted work survives an
+    agent that overwrote or deleted it. Only when those bytes are unavailable
+    does the old behaviour apply: leave it alone and say so, because discarding
+    an operator's work to tidy up would be the same harm this module exists to
+    prevent, committed by the cleanup instead of the agent.
     """
     if path in before:
-        # Already dirty beforehand. If it is gone from the diff now, the agent
-        # reverted an engineer's uncommitted work and the content is not ours
-        # to reconstruct — say so loudly rather than pretend it was handled.
+        # Already dirty beforehand — the agent either reverted it or edited it
+        # again. Either way the version that belongs here is the operator's.
+        if _restore(run, path, preserved):
+            return "restored"
         return "REVERTED-BY-AGENT (uncommitted work lost, cannot restore)" \
             if path not in after else "left as-is (was already modified)"
     if after.get(path) == "untracked":
@@ -160,7 +217,8 @@ def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str]) ->
     return "rolled back" if result.returncode == 0 else "could not roll back"
 
 
-def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]:
+def enforce(run, phase, agent: AgentConfig, before: dict[str, str],
+            preserved: dict[str, bytes] | None = None) -> list[str]:
     """Compare the tree against `before`; undo and raise if the agent overstepped.
 
     Returns the paths it legitimately changed, so the trace records what an
@@ -176,10 +234,23 @@ def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]
     if not breaches:
         return touched
 
-    outcomes = {p: _roll_back(run, p, before, after) for p in breaches}
+    outcomes = {p: _roll_back(run, p, before, after, preserved or {})
+                for p in breaches}
     scope = ("read-only" if agent.writes == []
              else f"limited to {agent.writes}" if agent.writes
              else f"barred from {run.cfg.defaults.protected_files}")
     detail = "\n".join(f"  - {p} — {outcome}" for p, outcome in outcomes.items())
+
+    # Aborting is about damage, not about the rule. When every offending path
+    # was put back and there were only a few, the tree is exactly what it would
+    # have been had the agent stayed in scope — so the run continues, loudly.
+    # A scratch file redirected into the repo should not kill a 13-phase run.
+    unrecovered = [p for p, outcome in outcomes.items() if outcome not in RECOVERED]
+    if not unrecovered and len(outcomes) <= RECOVERED_LIMIT:
+        run.console.note(
+            f"permission: {agent.name} is {scope}; "
+            f"{len(outcomes)} out-of-scope path(s) undone, continuing:\n{detail}")
+        return [p for p in touched if p not in outcomes]
+
     raise PermissionBreach(
         f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}")

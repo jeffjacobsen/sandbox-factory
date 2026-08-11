@@ -128,6 +128,41 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
 
 
+def assistant_message_records(event: dict) -> list[dict]:
+    """Thinking and text of one COMPLETE assistant message, as trace records.
+
+    Reads `message_end` ONLY. The stream also carries `message_update` events,
+    but those are keystroke-level deltas ("17", "17*23…") — forwarding them
+    would fill the trace with fragments. `message_end` is the complete-thought
+    unit, and it arrives before the message's tool_execution_end, so these
+    records naturally precede the tool_call they narrate.
+
+    Returns up to two records per message: kind="thinking" (the joined thinking
+    blocks) and kind="agent_message" (the joined text blocks). `stop_reason`
+    distinguishes working narration ("toolUse") from the final answer ("stop").
+    """
+    if event.get("type") != "message_end":
+        return []
+    message = event.get("message", {}) or {}
+    if message.get("role") != "assistant":
+        return []
+    stop_reason = message.get("stopReason")
+    records = []
+    thinking = "".join(part.get("thinking", "") for part in message.get("content", []) or []
+                       if isinstance(part, dict) and part.get("type") == "thinking")
+    text = _text_of(message)
+    for kind, body in (("thinking", thinking), ("agent_message", text)):
+        if not body.strip():
+            continue
+        records.append({
+            "kind": kind,
+            "label": _clip(" ".join(body.split()), LABEL_CHARS),
+            "text": _clip(body, RESULT_SNIPPET_CHARS),
+            "stop_reason": stop_reason,
+        })
+    return records
+
+
 def _label(tool: str, args: dict) -> str:
     """One-line human name for a tool call: `bash: ls -la src`."""
     value = next((args[key] for key in PRIMARY_ARGS
