@@ -99,28 +99,62 @@
   </header>
 
   <section>
-    <h2>Where this stands <span class="pill">2026-08-04</span></h2>
-    <p><strong>Built and working:</strong> all six phases exist; five ran on live hardware. A real
-    SDLC completed inside a sandbox (5/5 phases, 902k tokens, <samp>$0.528</samp>, commit
-    <code>bcfc678</code>). Command surface is namespaced into <code>sbx</code> / <code>adw</code> /
-    <code>local</code> / <code>obs</code>. The orchestrator skill and five prompts are authored.</p>
-    <aside class="danger"><strong>Not yet proven, and the claim matters:</strong> the verified
-    end-to-end run happened on a VM where the strip had been <em>accidentally undone</em> by a
-    <code>git checkout -- .</code>. The strip has since been fixed (<code>mod?</code>, and
-    <code>mount</code> relocated into the stripped directory) and confirmed in isolation, but a
-    clean full mount with the strip genuinely in place has <mark>not</mark> been run.
-    <strong>TEARDOWN has never been executed at all.</strong></aside>
+    <h2>Where this stands <span class="pill">2026-08-04 · updated 2026-08-11</span></h2>
+    <p><strong>Built and working:</strong> all six phases exist and <mark>all six have now run on live
+    hardware</mark>. A real SDLC completed inside a sandbox (5/5 phases, 902k tokens,
+    <samp>$0.528</samp>, commit <code>bcfc678</code>). Command surface is namespaced into
+    <code>sbx</code> / <code>adw</code> / <code>local</code> / <code>obs</code>. The orchestrator
+    skill and five prompts are authored.</p>
+    <p><strong>The strip is gone.</strong> Nothing deletes tracked paths from the mounted copy any
+    more — the whole repo ships intact and the de-nesting is enforced by credentials alone, so the
+    justfile always parses inside the box. That retires the entire class of strip-related failure,
+    including the <code>import</code>-of-a-deleted-file parse error that once killed
+    <code>just adw sdlc</code> at parse time on a correctly stripped sandbox.</p>
+    <p><strong>Teardown has run.</strong> Three runs from 2026-08-10 are closed, one carried its
+    spend back into the record (<samp>$0.001119</samp>), and <code>ssh exe.dev ls</code> reports no
+    surviving VMs. Revocation, destroy and <code>close()</code> are exercised.</p>
+    <aside class="danger"><strong>Not yet proven, and the claim matters:</strong> the one post-strip
+    run that got past <code>create</code> (<code>my-task-20260810-4bd013</code>) went
+    create&nbsp;&rarr;&nbsp;fill&nbsp;&rarr;&nbsp;setup&nbsp;&rarr;&nbsp;observe and then straight to
+    teardown — its <code>pid</code> is <code>null</code>, so <mark>no ADW has ever executed on a box
+    built by the current code</mark>. The 902k-token SDLC above still comes from the VM where the
+    strip had been accidentally undone. Consequently <strong>HARVEST has never bundled a commit</strong>:
+    <code>refs/sandbox/</code> is empty, and a run that committed nothing is exactly the case harvest
+    reports as success. The <code>git bundle</code> path is written but unverified end to end.</aside>
     <h3>Outstanding</h3>
     <ul>
-      <li><strong>Clean e2e re-run</strong> with the strip in place — the headline claim depends on it.</li>
-      <li><strong>Teardown unexercised.</strong> It is also the only thing that rescues a sandbox's commits (via <code>git bundle</code>) and records <code>spend</code>.</li>
+      <li><strong>Execute + harvest on a current box.</strong> One mount &rarr; execute &rarr; harvest
+      &rarr; teardown, confirming commits actually land in <code>refs/sandbox/&lt;run-id&gt;</code>.
+      This is the single run that would close the two gaps above, and every other item here is
+      cheaper than it.</li>
+      <li><strong><code>mount</code> does not forward a roster to <code>setup</code>.</strong> It
+      passes <code>{{FLAGS}}</code> to <code>create</code> only, so gate C always pings the default
+      roster even when the run will execute against another config. <code>setup</code> and
+      <code>execute</code> both take <code>CONFIG</code> now; the chain does not.</li>
       <li><strong>Vocabulary collision:</strong> a sandbox hosts many ADW runs, but the sandbox record calls itself <code>run_id</code> and duplicates it as <code>vm_name</code>. Rename to a single <code>sandbox</code> field is agreed in principle, not done.</li>
-      <li><strong><code>just sbx execute</code> cannot vary the roster</strong> — hardcoded to the module default, and <code>ssh vm "cmd"</code> carries no environment. Best-of-N cannot actually vary models until this is fixed.</li>
-      <li><strong>Gate C reads <code>SSSF_CONFIG</code> inside the sandbox</strong>, where nothing sets it, so it always pings the default roster.</li>
-      <li><strong>Naming asymmetry:</strong> <code>just local cc</code> vs <code>just sbx orchestrate</code> — same action, two conventions.</li>
-      <li><code>exedev vm snapshot</code> still lacks <code>sync</code> before <code>cp</code>; the golden-VM path is unexercised.</li>
-      <li>Skill cookbooks still document the pre-namespace flat commands.</li>
+      <li><strong><code>GET /api/v1/keys</code> pagination is unverified</strong> — flagged in
+      <code>reap.just</code> itself, observed with four keys and no pagination envelope. The failure
+      mode is silent: keys past a page boundary would never be offered as orphans.</li>
+      <li><code>exedev vm snapshot</code> still lacks <code>sync</code> before <code>cp</code>
+      (<code>commands/vm.py</code> builds <code>["cp", source, …]</code> directly); the golden-VM path
+      is unexercised.</li>
+      <li><strong>The repo mounts only itself.</strong> <code>fill</code> carries the clone URL as a
+      constant, <code>observe</code> hardcodes <code>4501</code>/<code>4600</code> and the Inkwell and
+      visualizer directories, <code>execute</code> hardcodes the <code>adw</code> command shape, and
+      <code>setup</code> depends on <code>provision.sh</code> existing <em>inside the clone</em>.
+      Making this work for any repo is its own proposal.</li>
+      <li><strong>ADW command shape diverges from the SSSF template.</strong> This repo namespaced the
+      workflows under <code>mod adw</code> (<code>just adw sdlc</code>); the stamped template still
+      ships flat recipes (<code>just sdlc</code>). Both are correct in their own repo, which is
+      exactly why it needs writing down.</li>
     </ul>
+    <p><small><strong>Resolved since 2026-08-04</strong>, previously listed here: the strip re-run
+    (the strip no longer exists) · teardown unexercised (it has run) ·
+    <code>just sbx execute</code> could not vary the roster (it takes <code>CONFIG</code> and forwards
+    <code>--config</code>) · gate C read <code>SSSF_CONFIG</code> from inside the box (it is an
+    argument now) · <code>just local cc</code> vs <code>just sbx orchestrate</code> naming asymmetry
+    (both are <code>cc</code>&nbsp;/&nbsp;<code>pi</code> under <code>orch</code>) · orchestrator
+    cookbooks documenting pre-namespace flat commands (all namespaced).</small></p>
   </section>
 
   <section>

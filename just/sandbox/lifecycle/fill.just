@@ -15,9 +15,13 @@ fill RUN_ID *SHA:
     # even if just is ever invoked with --justfile from elsewhere.
     cd "{{justfile_directory()}}"
     RR="sandbox_mount/host/run_record.py"
+    MF="sandbox_mount/host/manifest.py"
 
     # Public repo: no auth, no GitHub integration, no exe.dev git integration.
-    REPO="https://github.com/disler/inkwell-agent-sandboxes-and-software-factory.git"
+    # WHICH repo is the target's answer, not ours — sandbox.yaml owns it, and
+    # this phase owns only how to get it onto a box.
+    REPO=$("$MF" get repo)
+    [ -n "$REPO" ] || { echo "fill: sandbox.yaml declares no 'repo' — run: $MF check" >&2; exit 1; }
 
     # *SHA is variadic: it interpolates to "" when unpinned, space-joined otherwise.
     # Only the first token is meaningful; extra words are a caller mistake we ignore.
@@ -128,28 +132,54 @@ fill RUN_ID *SHA:
     # checked out, never the one that was asked for.
     "$RR" set {{RUN_ID}} commit_sha="$HEAD_SHA"
 
-    # .env lands here, not at CREATE: it lives inside app/, which does not exist
-    # until the clone does. `new --env` is useless for it anyway — that lands in
-    # /etc/profile.d and is invisible to `ssh vm "cmd"`.
-    KEY_FILE=".sandbox/runs/{{RUN_ID}}.key"
-    if [ ! -s "$KEY_FILE" ]; then
-        echo "fill: no runtime key at $KEY_FILE — CREATE must mint it before FILL" >&2
-        exit 1
-    fi
-    RUNTIME_KEY=$(tr -d '\r\n' < "$KEY_FILE")
-    # Unverified which shape CREATE writes; tolerate both the bare key and KEY=value.
-    RUNTIME_KEY="${RUNTIME_KEY#OPENROUTER_API_KEY=}"
-    if [ -z "$RUNTIME_KEY" ]; then
-        echo "fill: runtime key file $KEY_FILE is empty" >&2
-        exit 1
-    fi
+    # Secrets land here, not at CREATE: they live inside app/, which does not
+    # exist until the clone does. `new --env` is useless for them anyway — that
+    # lands in /etc/profile.d and is invisible to `ssh vm "cmd"`.
+    #
+    # WHICH files and which variable names is the target repo's answer;
+    # sandbox.yaml declares them as templates and this phase substitutes the one
+    # value it has. A repo whose factory reads FOO_TOKEN changes one line there.
+    SECRET_LINES=$("$MF" secrets)
+    if [ -z "$SECRET_LINES" ]; then
+        echo "==> fill: sandbox.yaml declares no secrets — nothing written into the clone"
+    else
+        KEY_FILE=".sandbox/runs/{{RUN_ID}}.key"
+        if [ ! -s "$KEY_FILE" ]; then
+            echo "fill: no runtime key at $KEY_FILE — CREATE must mint it before FILL" >&2
+            exit 1
+        fi
+        RUNTIME_KEY=$(tr -d '\r\n' < "$KEY_FILE")
+        # Unverified which shape CREATE writes; tolerate both the bare key and KEY=value.
+        RUNTIME_KEY="${RUNTIME_KEY#OPENROUTER_API_KEY=}"
+        if [ -z "$RUNTIME_KEY" ]; then
+            echo "fill: runtime key file $KEY_FILE is empty" >&2
+            exit 1
+        fi
 
-    # printf is a builtin and cat reads stdin: the key never appears in argv on
-    # either side, so it never shows up in ps. umask before the redirect so the
-    # file is never briefly world-readable.
-    printf 'OPENROUTER_API_KEY=%s\n' "$RUNTIME_KEY" \
-        | ssh "$HOST" 'umask 077 && cat > app/.env && chmod 600 app/.env'
-
-    # Prove it landed without ever printing it back. exeuntu is Ubuntu, so GNU stat.
-    ENV_STAT=$(ssh "$HOST" 'stat -c "%a %s" app/.env')
-    echo "==> fill: app/.env written (mode/size: $ENV_STAT) — provisioning key never left the host"
+        # printf is a builtin and cat reads stdin: the key never appears in argv
+        # on either side, so it never shows up in ps. umask before the redirect
+        # so the file is never briefly world-readable. The substitution is bash
+        # string replacement for the same reason — never an argument to anything.
+        DEST=""
+        BODY=""
+        flush_secret() {
+            [ -n "$DEST" ] || return 0
+            printf '%s' "$BODY" \
+                | ssh "$HOST" "umask 077 && cat > app/$DEST && chmod 600 app/$DEST" \
+                || { echo "fill: could not write app/$DEST on $VM" >&2; exit 1; }
+            # Prove it landed without ever printing it back. exeuntu is Ubuntu,
+            # so GNU stat. `< /dev/null`: this runs inside a read loop.
+            STAT=$(ssh "$HOST" "stat -c '%a %s' app/$DEST" < /dev/null)
+            echo "==> fill: app/$DEST written (mode/size: $STAT) — provisioning key never left the host"
+        }
+        while IFS=$'\t' read -r D VAR TMPL; do
+            [ -n "$D" ] || continue
+            if [ "$D" != "$DEST" ]; then
+                flush_secret
+                DEST="$D"
+                BODY=""
+            fi
+            BODY="${BODY}${VAR}=${TMPL//\{runtime_key\}/$RUNTIME_KEY}"$'\n'
+        done <<< "$SECRET_LINES"
+        flush_secret
+    fi

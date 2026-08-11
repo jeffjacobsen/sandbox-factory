@@ -1,0 +1,83 @@
+# sandbox.yaml — how THIS repo runs inside a throwaway exe.dev sandbox.
+#
+# The six phases under just/sandbox/ used to carry this repo's answers as
+# constants: the clone URL in fill, the ports and directories in observe, the
+# `adw` command shape in execute. That is why the system could only ever mount
+# itself. Those constants live here now, so the phases describe HOW to mount a
+# repo and this file describes WHICH repo.
+#
+# Read on the HOST, by sandbox_mount/host/manifest.py. Nothing here is a secret:
+# it is committed, and the only credential it mentions is a placeholder that the
+# host substitutes at FILL time from the key CREATE minted.
+#
+# EVERY FIELD BELOW IS CONSUMED by a phase today. When a field stops being read,
+# delete it — a manifest that describes behaviour nobody implements is worse
+# than no manifest, in exactly the way an unchecked box in the spec is not the
+# same as an unwritten one. (The health gate is the next section to arrive here;
+# until it does, setup.just still owns assertions A-E in host code.)
+#
+# Two placeholders are expanded by the host, never by YAML:
+#   {runtime_key}  the per-run OpenRouter key, substituted in bash so it never
+#                  reaches argv, a log, or this file.
+#   {app}          the clone root inside the VM, i.e. $HOME/app. Left unexpanded
+#                  on the host so the REMOTE shell resolves $HOME.
+
+version: 1
+
+# Identity. Becomes the project half of a run id in a multi-repo fleet, so it
+# has to survive DNS: lowercase, hyphens, and short enough to leave room for
+# -<task>-<date>-<6 hex> inside a 63-character hostname label.
+name: inkwell
+
+# What FILL clones. Public HTTPS on purpose: no auth, no GitHub integration, no
+# token on the box — measured at 2.61s for 216 files.
+repo: https://github.com/disler/inkwell-agent-sandboxes-and-software-factory.git
+
+provision:
+  # Runs inside the VM after the clone, streamed live by SETUP. Repo-relative.
+  # Today the host requires this file to exist in the clone; a later step pushes
+  # a base provisioner and makes this an optional project hook.
+  script: sandbox_mount/guest/provision.sh
+
+# Files FILL writes into the clone. Each `vars` value is a template; the host
+# substitutes {runtime_key} with bash string replacement and pipes the result
+# over ssh, so the key never appears in a command line on either side.
+secrets:
+  - dest: .env
+    vars:
+      OPENROUTER_API_KEY: "{runtime_key}"
+
+# What OBSERVE starts and exposes. Ports must sit in 3000-9999 (the proxy
+# auto-forwards that range) and EXACTLY ONE service may be public — "public" is
+# a property of the one port the proxy targets, not of the VM, so a second one
+# is not a stricter setting, it is a contradiction.
+services:
+  app:
+    dir: apps/inkwell
+    cmd: bun run server.ts
+    port: 4501
+    public: true          # the anonymous one: https://<vm>.exe.xyz/
+  obs:
+    dir: .claude/skills/sssf/apps/visualizer
+    cmd: bun run server/index.ts
+    port: 4600
+    public: false         # reachable, but auth-gated to users with VM access
+    # Checked before the start attempt: the visualizer EXITS when the trace db
+    # is missing, and `just sbx mount` ends at observe BEFORE any ADW has run.
+    # Without this the failure looks like a dead port instead of a missing file.
+    requires:
+      - adws/adw_data/sssf.db
+    # Resolves against the server's cwd, which is the service dir — so it has to
+    # be absolute. The host emits it with {app} expanded to the literal
+    # `$HOME/app` and lets the remote shell resolve $HOME.
+    env:
+      SSSF_DB: "{app}/adws/adw_data/sssf.db"
+
+kickoff:
+  # The command EXECUTE detaches inside the box. The orchestrator owns the
+  # detachment (nohup + redirect + < /dev/null) and the log file; this owns only
+  # what to run. `--shell bash --shell-arg -c` is mandatory: the root justfile
+  # sets zsh -ic and zsh is not in the exeuntu image.
+  #   {workflow}  the ADW recipe name        {prompt}  the prompt, already quoted
+  #   {config}    ` --config <path>` or ""   {extra}   the ADW's own flags
+  default: "just --shell bash --shell-arg -c adw {workflow} {prompt}{config} {extra}"

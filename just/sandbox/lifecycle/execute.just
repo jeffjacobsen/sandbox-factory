@@ -49,8 +49,15 @@ execute RUN_ID PROMPT CONFIG="" ADW="sdlc" *EXTRA:
     #!/usr/bin/env bash
     set -euo pipefail
     RR="{{justfile_directory()}}/sandbox_mount/host/run_record.py"
+    MF="{{justfile_directory()}}/sandbox_mount/host/manifest.py"
     VM=$("$RR" get {{RUN_ID}} vm_name)
     [ -n "$VM" ] || { echo "execute {{RUN_ID}}: no vm_name in the run record — is it mounted?" >&2; exit 1; }
+
+    # WHAT to run inside the box is the target repo's answer; detaching it and
+    # capturing the pid is ours. A repo whose factory is not SSSF changes one
+    # line of sandbox.yaml and this phase does not notice.
+    KICKOFF=$("$MF" get kickoff.default)
+    [ -n "$KICKOFF" ] || { echo "execute {{RUN_ID}}: sandbox.yaml declares no kickoff.default — run: $MF check" >&2; exit 1; }
 
     # quote() hands bash a correct single-quoted literal, so apostrophes in the
     # prompt survive hop 1 (just -> host bash). printf %q then survives hop 2
@@ -73,10 +80,23 @@ execute RUN_ID PROMPT CONFIG="" ADW="sdlc" *EXTRA:
     # (release stdin). `echo $!` inside the subshell is what gives us the PID —
     # \$! so it is expanded by the REMOTE shell, not here.
     #
-    # --shell bash --shell-arg -c is mandatory too: the repo's justfile sets
-    # shell := ["zsh", "-ic"] and zsh is not in the exeuntu image (installing it
-    # is ~35s of apt for no benefit). `adw sdlc` is the module recipe.
+    # The `--shell bash --shell-arg -c` that the template carries is mandatory,
+    # not stylistic: the repo's justfile sets shell := ["zsh", "-ic"] and zsh is
+    # not in the exeuntu image (installing it is ~35s of apt for no benefit).
     #
+    # Substitution is bash string replacement, in this order, so a prompt that
+    # happens to contain the literal text {config} cannot inject a flag: the
+    # placeholders are consumed before the prompt's own bytes are in the string.
+    ADW={{ quote(ADW) }}
+    # EXTRA stays raw, exactly as it was interpolated before: these are flags,
+    # not prose, and re-quoting them would break --flag value pairs.
+    EXTRA="{{ EXTRA }}"
+    CMD="$KICKOFF"
+    CMD="${CMD//\{workflow\}/$ADW}"
+    CMD="${CMD//\{config\}/$CFG_ARG}"
+    CMD="${CMD//\{extra\}/$EXTRA}"
+    CMD="${CMD//\{prompt\}/$Q}"
+
     # NOTE: run.log is truncated on every execute — one detached SDLC per
     # sandbox at a time is the intended shape. Pull the old log first if you
     # care about it.
@@ -88,7 +108,7 @@ execute RUN_ID PROMPT CONFIG="" ADW="sdlc" *EXTRA:
     # SDLC from its stdin; this outer one stops ssh reading the CALLER's stdin.
     # Without it a `while read ... done < arms.map` loop around this recipe runs
     # exactly once — ssh eats the rest of the map and the loop sees EOF.
-    PID=$(ssh "$VM".exe.xyz "cd app && ( nohup just --shell bash --shell-arg -c adw {{ADW}} $Q$CFG_ARG {{EXTRA}} > run.log 2>&1 < /dev/null & echo \$! )" < /dev/null | tail -n 1)
+    PID=$(ssh "$VM".exe.xyz "cd app && ( nohup $CMD > run.log 2>&1 < /dev/null & echo \$! )" < /dev/null | tail -n 1)
 
     # A non-numeric answer means the remote shell printed an error where the PID
     # should be. Fail here rather than writing garbage into the record.

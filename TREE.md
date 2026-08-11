@@ -17,6 +17,10 @@ The command surface mirrors that split: `just adw` (the workflows), `just sbx` (
 
 ```
 justfile              4 namespaces and nothing else: adw, sbx, local, obs.
+sandbox.yaml          how THIS repo runs in a box: clone URL, provision script, secrets,
+                      services + ports, kickoff command. The phases describe HOW to mount
+                      a repo; this describes WHICH. Every field in it is read by a phase —
+                      when one stops being read, delete it.
 README.md             the three layers, the layout, and how to run each one.
 TREE.md               this file.
 .env.sample           OPENROUTER_PROVISIONING_KEY is HOST-ONLY; the runtime key is minted
@@ -67,6 +71,11 @@ just/sandbox/         the `sbx` namespace. HOST-ONLY: needs the exe.dev account 
 ```
 host/run_record.py    the ONLY state shared across the six phases (each is a separate
                       process). Without it teardown cannot know which key to revoke.
+host/manifest.py      the only reader of sandbox.yaml. `get` for single fields, `services`
+                      / `secrets` as TSV for the loops in OBSERVE and FILL, `check` for
+                      doctor. NOT stdlib-only (YAML isn't in the stdlib) — which is fine
+                      only because nothing on the TEARDOWN path reads it, so a broken
+                      manifest can never strand a live key.
 host/runs_table.py    renders `just sbx manage list`. A file, not embedded, because an unindented
                       line inside a just recipe body TERMINATES the recipe.
 guest/provision.sh    runs INSIDE the VM: installs bun + just from CDNs

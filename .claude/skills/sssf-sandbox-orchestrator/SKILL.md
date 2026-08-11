@@ -37,10 +37,11 @@ never work around a missing prerequisite by hand.
 just sbx manage doctor
 ```
 
-It checks all six in one pass: `ssh exe.dev` reachable, `OPENROUTER_PROVISIONING_KEY` set (never
-printed), the run-record helper runs, the provisioner is executable,
-the models template carries full four-field rate blocks, and the `adw` layer resolves. Green ends
-with `sbx doctor: OK`.
+It checks everything in one pass: `ssh exe.dev` reachable, a trusted host key to verify VMs with,
+`OPENROUTER_PROVISIONING_KEY` set (never printed) **and confirmed to be a management key rather than
+an inference key**, the run-record helper runs, `sandbox.yaml` validates, the provisioner it names is
+executable, the models template carries full four-field rate blocks, and the `adw` layer resolves.
+Green ends with `sbx doctor: OK`.
 
 Two things it does **not** cover, so check them yourself:
 
@@ -60,6 +61,21 @@ Two things it does **not** cover, so check them yourself:
 | Lives in | `just/sandbox/`, `sandbox_mount/host/` | `just/adws.just` (`mod adw`), `adws/`, `sandbox_mount/guest/` |
 | Entry point | `just sbx mount`, `just sbx lifecycle execute`, `just sbx lifecycle teardown` | `just adw sdlc "..."` |
 | Credential | exe.dev account + OpenRouter **provisioning** key | one disposable **runtime** key, $50 cap |
+
+### `sandbox.yaml` — which repo, not how to mount one
+
+The phases carry no project constants. The clone URL, the provision script, the secret files, the
+services and their ports, and the kickoff command all come from `sandbox.yaml` at the repo root, read
+by `sandbox_mount/host/manifest.py`. **If a mount is doing the wrong thing for this project, the fix
+is usually one line there — not in a recipe.** Two rules it enforces, both from measurements: ports
+must be in 3000-9999 (what the proxy forwards) and **exactly one** service may be `public: true`
+(public is a property of the one port the proxy targets, so a second is a contradiction, not a
+stricter setting). `just sbx manage doctor` validates it before a VM exists.
+
+```bash
+sandbox_mount/host/manifest.py check      # what doctor runs
+sandbox_mount/host/manifest.py show       # the whole thing as JSON
+```
 
 The whole repo ships to the sandbox, this skill included. **What a sandbox cannot do is USE the
 out-sandbox half** — `just sbx mount` there fails on a missing exe.dev account, and `create` fails on

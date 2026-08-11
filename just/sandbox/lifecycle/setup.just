@@ -29,8 +29,15 @@ setup RUN_ID CONFIG="":
     set -euo pipefail
 
     RR="sandbox_mount/host/run_record.py"
+    MF="sandbox_mount/host/manifest.py"
     VM=$("$RR" get {{RUN_ID}} vm_name)
     SHA=$("$RR" get {{RUN_ID}} commit_sha)
+
+    # WHICH script provisions the box is the target repo's answer; running it and
+    # gating the result is ours. Gates A-E below are still host code — they move
+    # into the manifest in a later step, and until they do this file owns them.
+    PROV=$("$MF" get provision.script)
+    [ -n "$PROV" ] || { echo "[setup] sandbox.yaml declares no provision.script — run: $MF check" >&2; exit 1; }
 
     # run_record prints an empty line for an unset field, so emptiness is the
     # real check — a missing vm_name means CREATE never finished.
@@ -60,12 +67,12 @@ setup RUN_ID CONFIG="":
     # ── 1. provision ─────────────────────────────────────────────────────────
     # Clear the sentinel first: re-running setup on the same VM would otherwise
     # find the PREVIOUS run's sentinel and declare victory before provision ran.
-    echo "[setup] 1/3 provisioning (streaming provision.sh output)"
+    echo "[setup] 1/3 provisioning (streaming ${PROV} output)"
     "${SSH[@]}" 'rm -f /tmp/PROVISION_READY' < /dev/null \
       || gate_fail "cannot reach ${HOST} over ssh"
     # < /dev/null so ssh does not swallow this script's stdin; output streams live.
-    "${SSH[@]}" 'bash app/sandbox_mount/guest/provision.sh' < /dev/null \
-      || gate_fail "provision.sh exited non-zero (its last '── step ──' line names the stage)"
+    "${SSH[@]}" "bash app/${PROV}" < /dev/null \
+      || gate_fail "${PROV} exited non-zero (its last '── step ──' line names the stage)"
 
     # ── 2. sentinel ──────────────────────────────────────────────────────────
     # provision.sh touches /tmp/PROVISION_READY as its literal last line, so on

@@ -20,6 +20,7 @@ observe RUN_ID:
     set -euo pipefail
 
     RR="sandbox_mount/host/run_record.py"
+    MF="sandbox_mount/host/manifest.py"
 
     # The run record is the ONLY state shared across the six phases; nothing
     # else survives between them.
@@ -30,13 +31,15 @@ observe RUN_ID:
     fi
     HOST="$VM.exe.xyz"
 
-    APP_PORT=4501
-    OBS_PORT=4600
-    # The clone target is `app` relative to the exedev user's home, so this is
-    # /home/exedev/app on a stock exeuntu VM. Expanded on the VM, not here.
-    APP_DIR='$HOME/app/apps/inkwell'
-    OBS_DIR='$HOME/app/.claude/skills/sssf/apps/visualizer'
-    OBS_DB='$HOME/app/adws/adw_data/sssf.db'
+    # WHAT to start, on which port, and which one is public are the target
+    # repo's answers. This phase owns the mechanics they all share: the
+    # idempotent start, the bind check, the proxy retarget, the verification.
+    #
+    # One TSV line per service rather than a `get` per field: seven calls to a
+    # uv script to start two servers is silly, and the fixed field count makes
+    # a missing optional field a dash instead of a misaligned `read`.
+    SVC_LINES=$("$MF" services)
+    [ -n "$SVC_LINES" ] || { echo "observe: sandbox.yaml declares no services — run: $MF check" >&2; exit 1; }
 
     echo "── observe {{RUN_ID}} · vm $VM ──────────────────────────────"
 
@@ -49,13 +52,25 @@ observe RUN_ID:
         echo "observe: cannot ssh $HOST — VM left up for debugging" >&2
         exit 1
     fi
-    echo "[1/6] ssh ok — $HOST"
+
+    # ssh + one line per service + proxy + record + verify.
+    N_SVC=$(printf '%s\n' "$SVC_LINES" | grep -c .)
+    STEP=0
+    TOTAL=$((4 + N_SVC))
+    step() { STEP=$((STEP + 1)); printf '[%d/%d] %s\n' "$STEP" "$TOTAL" "$1"; }
+
+    step "ssh ok — $HOST"
 
     # `ss -ltn` column 4 is Local Address:Port. bun binds 0.0.0.0 by default so
     # a live server shows as *:4501, which the :PORT suffix match catches. The
     # proxy cannot reach a 127.0.0.1 bind, so this doubles as a bind check.
+    #
+    # `< /dev/null` on every ssh below is load-bearing now that the services come
+    # from a loop: ssh reads the caller's stdin by default, and the caller's
+    # stdin IS the service list. Without it the first ssh swallows the remaining
+    # services and the loop runs exactly once.
     listening() {
-        ssh "$HOST" 'ss -ltn' 2>/dev/null | awk '{print $4}' | grep -q ":$1\$"
+        ssh "$HOST" 'ss -ltn' < /dev/null 2>/dev/null | awk '{print $4}' | grep -q ":$1\$"
     }
 
     # Poll rather than sleep-a-guess: bun is up in well under a second warm, but
@@ -70,107 +85,137 @@ observe RUN_ID:
         return 0
     }
 
-    # ── 1. inkwell app on 4501 ───────────────────────────────────────────────
+    # ── 1. start every declared service ──────────────────────────────────────
     # Idempotent: observe is safe to re-run, and `just sbx mount` ends here, so a
-    # second call must not stack a second bun on the same port.
-    echo "[2/6] app  :$APP_PORT"
-    if listening "$APP_PORT"; then
-        echo "       already listening — leaving it alone"
-    else
+    # second call must not stack a second server on the same port.
+    #
+    # Declaration order is start order, which is why manifest.py preserves it:
+    # a service that needs another one's port up goes second in sandbox.yaml.
+    N=0
+    PRIMARY_SVC=""
+    PRIMARY_PORT=""
+    while IFS=$'\t' read -r SVC DIR CMD PORT PUBLIC REQ ENVS; do
+        [ -n "$SVC" ] || continue
+        S_NAME[$N]="$SVC"; S_PORT[$N]="$PORT"; S_PUBLIC[$N]="$PUBLIC"
+        N=$((N + 1))
+        [ "$PUBLIC" = "yes" ] && { PRIMARY_SVC="$SVC"; PRIMARY_PORT="$PORT"; }
+
+        # The clone lands at `app` under the exedev user's home, so these are
+        # /home/exedev/app/... on a stock VM. Built as a LITERAL $HOME here and
+        # expanded by the remote shell — the host's $HOME is a different path.
+        R_DIR='$HOME/app/'"$DIR"
+        LOG='$HOME/'"$SVC.log"
+
+        step "$SVC  :$PORT"
+
+        # A declared prerequisite is checked BEFORE the start attempt, so the
+        # error names the real cause instead of showing an empty port. This is
+        # how the visualizer's missing sssf.db reports itself: it exits on the
+        # spot when the db is absent, and `just sbx mount` reaches observe before
+        # any ADW has run.
+        if [ "$REQ" != "-" ]; then
+            for R in ${REQ//,/ }; do
+                if ! ssh "$HOST" "test -e \$HOME/app/$R" < /dev/null; then
+                    echo "observe: $SVC requires app/$R on $VM, and it is missing." >&2
+                    echo "         SETUP is what creates it — re-run it:" >&2
+                    echo "           just sbx lifecycle setup {{RUN_ID}}" >&2
+                    exit 1
+                fi
+            done
+        fi
+
+        if listening "$PORT"; then
+            echo "       already listening — leaving it alone"
+            continue
+        fi
+
+        # Any declared env goes BEFORE nohup, never after: `nohup VAR=x cmd`
+        # makes nohup try to exec a program literally named "VAR=x". As a prefix
+        # the assignment lands in nohup's environment and the server inherits it.
+        PREFIX=""
+        [ "$ENVS" != "-" ] && PREFIX="$ENVS "
+
         # All three detachment pieces are REQUIRED or ssh never returns: nohup
-        # (survive session end), the redirect (release stdout/stderr), and
-        # < /dev/null (release stdin). Dropping any one hangs this recipe.
-        ssh "$HOST" "cd $APP_DIR && ( nohup bun run server.ts > \$HOME/inkwell-app.log 2>&1 < /dev/null & echo \$! )" \
+        # (survive session end), the redirect (release stdout/stderr), and the
+        # inner < /dev/null (release stdin). Dropping any one hangs this recipe.
+        # The OUTER < /dev/null is a different fix for a different bug: it stops
+        # ssh eating the service list this loop is reading from.
+        ssh "$HOST" "cd $R_DIR && ( ${PREFIX}nohup $CMD > $LOG 2>&1 < /dev/null & echo \$! )" < /dev/null \
             | sed 's/^/       started pid /'
-        if ! wait_listen "$APP_PORT"; then
-            echo "observe: inkwell never bound :$APP_PORT — tail of ~/inkwell-app.log:" >&2
-            ssh "$HOST" 'tail -n 40 $HOME/inkwell-app.log' >&2 || true
+        if ! wait_listen "$PORT"; then
+            echo "observe: $SVC never bound :$PORT — tail of ~/$SVC.log:" >&2
+            ssh "$HOST" "tail -n 40 $LOG" < /dev/null >&2 || true
             exit 1
         fi
         echo "       up"
-    fi
+    done <<< "$SVC_LINES"
 
-    # ── 2. visualizer on 4600 ────────────────────────────────────────────────
-    # VERIFIED in the plan: the visualizer EXITS when sssf.db is missing. Check
-    # for the db before spending a start attempt, so the error names the real
-    # cause instead of showing an empty port.
-    echo "[3/6] obs  :$OBS_PORT"
-    if ! ssh "$HOST" "test -f $OBS_DB"; then
-        echo "observe: $OBS_DB is missing on $VM." >&2
-        echo "         The visualizer exits immediately without it. That db is created by" >&2
-        echo "         sandbox_mount/guest/provision.sh (step 8, 'trace db') — re-run SETUP:" >&2
-        echo "           just sbx lifecycle setup {{RUN_ID}}" >&2
-        exit 1
-    fi
-    if listening "$OBS_PORT"; then
-        echo "       already listening — leaving it alone"
-    else
-        # SSSF_DB goes BEFORE nohup, not after: `nohup VAR=x cmd` makes nohup
-        # try to exec a program literally named "VAR=x". As a prefix on nohup
-        # the assignment lands in its environment and bun inherits it.
-        # The db path is passed explicitly because it resolves against the
-        # server's cwd, and the server runs from the visualizer app dir.
-        ssh "$HOST" "cd $OBS_DIR && ( SSSF_DB=$OBS_DB nohup bun run server/index.ts > \$HOME/visualizer.log 2>&1 < /dev/null & echo \$! )" \
-            | sed 's/^/       started pid /'
-        if ! wait_listen "$OBS_PORT"; then
-            echo "observe: visualizer never bound :$OBS_PORT — tail of ~/visualizer.log:" >&2
-            ssh "$HOST" 'tail -n 40 $HOME/visualizer.log' >&2 || true
-            echo "         If it says 'sssf.db not found', SETUP did not initialize the trace db:" >&2
-            echo "           sandbox_mount/guest/provision.sh  ->  just sbx lifecycle setup {{RUN_ID}}" >&2
-            exit 1
-        fi
-        echo "       up"
-    fi
+    # `check` rejects a manifest with no public service, so this is a guard
+    # against the manifest changing under a mounted run, not a normal path.
+    [ -n "$PRIMARY_PORT" ] || { echo "observe: no service is marked public — nothing to expose" >&2; exit 1; }
 
-    # ── 3. proxy ─────────────────────────────────────────────────────────────
+    # ── 2. proxy ─────────────────────────────────────────────────────────────
     # MANDATORY. A fresh exeuntu VM proxies port 8000 (smallest EXPOSEd port
     # >= 1024); without this retarget https://$HOST/ hits nothing. set-public
     # applies to the primary port only — see the note printed at the end.
-    echo "[4/6] proxy -> :$APP_PORT, public"
-    ssh exe.dev share port "$VM" "$APP_PORT"
+    step "proxy -> :$PRIMARY_PORT ($PRIMARY_SVC), public"
+    ssh exe.dev share port "$VM" "$PRIMARY_PORT"
     ssh exe.dev share set-public "$VM"
 
-    # ── 4. record ────────────────────────────────────────────────────────────
-    echo "[5/6] recording ports"
-    "$RR" set {{RUN_ID}} "ports={\"app\":$APP_PORT,\"obs\":$OBS_PORT}"
+    # ── 3. record ────────────────────────────────────────────────────────────
+    # Built by manifest.py from the same lines the loop above started, so the
+    # record can never disagree with what is actually running.
+    step "recording ports"
+    "$RR" set {{RUN_ID}} "ports=$("$MF" ports-json)"
 
-    # ── 5. verify ────────────────────────────────────────────────────────────
-    # curl with no auth of any kind — that is the whole point of the app check.
-    # No -L: a redirect is a result here, not something to follow.
-    echo "[6/6] verifying"
+    # ── 4. verify ────────────────────────────────────────────────────────────
+    # curl with no auth of any kind — that is the whole point of the public
+    # check. No -L: a redirect is a result here, not something to follow.
+    step "verifying"
     code_of() {
         curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || echo 000
     }
 
-    # The public flag can lag the API call by a beat; retry before failing.
-    APP_CODE=000
-    for _ in 1 2 3 4 5 6; do
-        APP_CODE=$(code_of "https://$HOST/")
-        [ "$APP_CODE" = "200" ] && break
-        sleep 2
+    for i in $(seq 0 $((N - 1))); do
+        SVC="${S_NAME[$i]}"; PORT="${S_PORT[$i]}"
+        if [ "${S_PUBLIC[$i]}" = "yes" ]; then
+            # The public flag can lag the API call by a beat; retry before failing.
+            CODE=000
+            for _ in 1 2 3 4 5 6; do
+                CODE=$(code_of "https://$HOST/")
+                [ "$CODE" = "200" ] && break
+                sleep 2
+            done
+            if [ "$CODE" != "200" ]; then
+                echo "observe: $SVC returned $CODE anonymously at https://$HOST/ (want 200)" >&2
+                echo "         VM left up. Check: ssh exe.dev share show $VM" >&2
+                exit 1
+            fi
+            echo "       $SVC  200 anonymous"
+        else
+            # 307/401 anonymously is CORRECT for a non-primary port: alternate
+            # ports stay auth-gated to users with VM access. Only a dead proxy
+            # (000) or a 5xx is a real failure; anything else means the port is
+            # reachable and gated.
+            CODE=$(code_of "https://$HOST:$PORT/")
+            if [ "$CODE" = "000" ] || [ "$CODE" -ge 500 ]; then
+                echo "observe: $SVC unreachable at https://$HOST:$PORT/ (got $CODE)" >&2
+                exit 1
+            fi
+            echo "       $SVC  $CODE anonymous — expected, it is owner-gated"
+        fi
     done
-    if [ "$APP_CODE" != "200" ]; then
-        echo "observe: app returned $APP_CODE anonymously at https://$HOST/ (want 200)" >&2
-        echo "         VM left up. Check: ssh exe.dev share show $VM" >&2
-        exit 1
-    fi
-    echo "       app  200 anonymous"
-
-    # 307/401 anonymously is CORRECT for the obs port: alternate ports stay
-    # auth-gated to users with VM access. Only a dead proxy (000) or a 5xx is a
-    # real failure; anything else means the port is reachable and gated.
-    OBS_CODE=$(code_of "https://$HOST:$OBS_PORT/")
-    if [ "$OBS_CODE" = "000" ] || [ "$OBS_CODE" -ge 500 ]; then
-        echo "observe: obs port unreachable at https://$HOST:$OBS_PORT/ (got $OBS_CODE)" >&2
-        exit 1
-    fi
-    echo "       obs  $OBS_CODE anonymous — expected, it is owner-gated"
 
     echo ""
     echo "════════════════════════════════════════════════════════════"
-    echo "  app  https://$HOST/"
-    echo "  obs  https://$HOST:$OBS_PORT/"
+    for i in $(seq 0 $((N - 1))); do
+        if [ "${S_PUBLIC[$i]}" = "yes" ]; then
+            printf '  %-4s https://%s/\n' "${S_NAME[$i]}" "$HOST"
+        else
+            printf '  %-4s https://%s:%s/\n' "${S_NAME[$i]}" "$HOST" "${S_PORT[$i]}"
+        fi
+    done
     echo "════════════════════════════════════════════════════════════"
-    echo "  The obs URL opens fine in a browser already signed in to exe.dev."
+    echo "  The gated URLs open fine in a browser already signed in to exe.dev."
     echo "  Ports 3000-9999 are auto-forwarded by the proxy but auth-gated;"
-    echo "  only ONE port can ever be anonymous, and that is $APP_PORT."
+    echo "  only ONE port can ever be anonymous, and that is $PRIMARY_PORT."
