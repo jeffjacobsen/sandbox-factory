@@ -4,6 +4,17 @@
 # working-directory points at the repo root because every query below is a path
 # relative to it. This namespace is meant to work INSIDE a sandbox too — reading your
 # own traces is exactly what you want inside a sandbox.
+#
+# EVERY READ RECIPE TAKES AN OPTIONAL SOURCE, resolved by just/obs_db.sh:
+#
+#   just obs sessions                              this repo (the default)
+#   just obs sessions fts5-search-20260811-984a34  a harvested run, from anywhere
+#   just obs sessions /path/to/sssf.db             any db you name
+#
+# That is what makes this the place you look at the WHOLE fleet's history. Each
+# sandbox serves its own trace UI while it lives, and teardown harvests its db
+# home; without a source argument those harvested dbs were unreachable from the
+# one machine that had collected them all.
 set working-directory := '..'
 set positional-arguments
 
@@ -31,23 +42,41 @@ rosters:
       ' "$f"
     done
 
-# recent sessions
-sessions:
-    sqlite3 adws/adw_data/sssf.db "select adw_id, status, substr(request,1,60), total_tokens, round(total_cost,4) from sessions order by started_at desc limit 10;"
+# recent sessions: just obs sessions [run-id|db]
+sessions SOURCE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DB=$(bash just/obs_db.sh "{{SOURCE}}")
+    sqlite3 "$DB" "select adw_id, status, substr(request,1,60), total_tokens, round(total_cost,4) from sessions order by started_at desc limit 10;"
 
-# phases for one adw: just obs phases <adw_id>
-phases ADW_ID:
-    sqlite3 adws/adw_data/sssf.db "select seq, name, kind, owner, status, attempt from phases where adw_id='{{ADW_ID}}' order by seq;"
+# phases for one adw: just obs phases <adw_id> [run-id|db]
+phases ADW_ID SOURCE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DB=$(bash just/obs_db.sh "{{SOURCE}}")
+    sqlite3 "$DB" "select seq, name, kind, owner, status, attempt from phases where adw_id='{{ADW_ID}}' order by seq;"
 
-# live event tail for one adw: just obs tail <adw_id>
-tail ADW_ID:
-    sqlite3 adws/adw_data/sssf.db "select rowid, type, name, started_at from events where adw_id='{{ADW_ID}}' order by rowid desc limit 25;"
+# live event tail for one adw: just obs tail <adw_id> [run-id|db]
+tail ADW_ID SOURCE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DB=$(bash just/obs_db.sh "{{SOURCE}}")
+    sqlite3 "$DB" "select rowid, type, name, started_at from events where adw_id='{{ADW_ID}}' order by rowid desc limit 25;"
 
-# what a run is running right now: just obs procs <adw_id>
-procs ADW_ID:
-    sqlite3 adws/adw_data/sssf.db "select kind, name, pid, command, started_at from processes where adw_id='{{ADW_ID}}' and ended_at is null order by id;"
+# what a run is running right now: just obs procs <adw_id> [run-id|db]
+procs ADW_ID SOURCE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DB=$(bash just/obs_db.sh "{{SOURCE}}")
+    sqlite3 "$DB" "select kind, name, pid, command, started_at from processes where adw_id='{{ADW_ID}}' and ended_at is null order by id;"
 
 # Verifies each pid still looks like the thing we recorded; pids get recycled.
+#
+# DELIBERATELY TAKES NO SOURCE. This one does not read a trace, it sends signals
+# to THIS machine's processes — so it must read the db that recorded them. A
+# harvested db holds pids from a VM that no longer exists, and those numbers
+# belong to unrelated local processes now. The pid-reuse check below would catch
+# most of that; not offering the argument means it never has to.
 
 # stop a stuck run — children first, then the workflow
 kill ADW_ID:
@@ -68,6 +97,12 @@ kill ADW_ID:
 # The db path resolves against the server's cwd, and the server runs from the
 # app dir — so it is passed explicitly rather than left to be discovered.
 
-# boot the observability UI (server :4600 + vite dev)
-ui:
-    cd .claude/skills/sssf/apps/visualizer && bun install && (SSSF_DB={{invocation_directory()}}/adws/adw_data/sssf.db bun run server/index.ts &) && bunx vite
+# boot the observability UI on any run: just obs ui [run-id|db]
+ui SOURCE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DB=$(bash just/obs_db.sh "{{SOURCE}}")
+    echo "obs ui: reading $DB"
+    cd .claude/skills/sssf/apps/visualizer && bun install
+    (SSSF_DB="$DB" bun run server/index.ts &)
+    bunx vite
