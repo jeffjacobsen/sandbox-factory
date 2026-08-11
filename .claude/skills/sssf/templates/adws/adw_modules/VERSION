@@ -1,0 +1,11 @@
+1.0.0
+# adws/adw_modules/ is VENDORED. It is stamped by `/sssf install` and belongs to
+# the skill, not to the repo it lands in. Editing a file here is a fork: the next
+# install will not merge your change, and `/sssf install --check` will report the
+# file as drifted.
+#
+# Customise by DATA instead:
+#   commands        -> the `quality:` block in sssf.config.yaml
+#   models/agents   -> the `agents:` block
+#   prompts         -> adws/adw_data/prompt_engineering/ (already per-repo)
+#   new workflows   -> new adws/adw_*.py files, which are yours

@@ -36,6 +36,36 @@ observability:
   db: adws/adw_data/sssf.db        # tracer writes here directly; the UI polls it
   poll_ms: 500                     # visualizer live-poll cadence
 
+# ── Deterministic quality: commands as DATA ──────────────────────────────────
+# THIS is where you customise lint/typecheck/build/test. Never by editing
+# adws/adw_modules/quality.py — the ADWs import its function names, and a repo
+# that renamed one there lost ~$0.96 per run to an AttributeError that only
+# surfaced at the tail of each chain, after the planner and builder had spent.
+#
+# argv LISTS, not shell strings: nothing to quote wrong, no shell to inject
+# into. BARE binary names, not absolute paths: an ADW inherits the operator's
+# environment, so `bun` resolves off PATH exactly as it does in their shell.
+#
+# {output_dir} is resolved per run, under the session's handoff dir.
+quality:
+  # What `run_tests` runs — the highest-value one to wire up first. Leave it
+  # empty and the ADWs that gate on tests will say so rather than invent one.
+  test: []                    # e.g. ["bun", "test"] or ["uv", "run", "pytest", "-q"]
+  test_timeout_seconds: 600
+
+  # What `run_quality` runs, in order. name/area/operation are trace labels;
+  # area is frontend|backend and operation is lint|typecheck|build.
+  checks: []
+  # e.g.
+  #   - name: lint
+  #     area: backend
+  #     operation: lint
+  #     argv: ["bun", "x", "oxlint@1.36.0", "src"]
+  #   - name: build
+  #     area: backend
+  #     operation: build
+  #     argv: ["bun", "build", "src/index.ts", "--outdir", "{output_dir}"]
+
 agents:
   - name: planner
     model: fireworks/accounts/fireworks/models/kimi-k3

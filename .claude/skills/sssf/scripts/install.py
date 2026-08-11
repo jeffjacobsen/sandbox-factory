@@ -58,15 +58,86 @@ def ensure_gitignore(root: Path, stamped: list) -> None:
         stamped.append(f"{gitignore} (+{len(missing)} entries)")
 
 
+def check_drift(root: Path) -> int:
+    """Report stamped files that differ from the templates they came from.
+
+    The ownership line is the point. adws/adw_modules/ is VENDORED: it belongs
+    to this skill, and a repo that edits it has forked, silently, until an
+    upgrade quietly reverts the edit or an ADW calls a name that was renamed.
+    This makes that visible, so an upgrade is a decision instead of a merge
+    nobody attempts.
+
+    Reports, never repairs. What to do about a drifted file is a judgement call
+    — it may be a customisation that should move into config, or a fix that
+    should go upstream — and a tool that silently overwrote it would destroy the
+    only copy of that work.
+    """
+    drifted, missing = [], []
+    for src in sorted((TEMPLATES / "adws" / "adw_modules").rglob("*")):
+        if src.is_dir() or "__pycache__" in src.parts:
+            continue
+        dest = root / "adws" / "adw_modules" / src.relative_to(TEMPLATES / "adws" / "adw_modules")
+        if not dest.exists():
+            missing.append(dest)
+        elif dest.read_bytes() != src.read_bytes():
+            drifted.append(dest)
+
+    version = (TEMPLATES / "adws" / "adw_modules" / "VERSION")
+    stamped = (root / "adws" / "adw_modules" / "VERSION")
+    tv = version.read_text().splitlines()[0].strip() if version.exists() else "?"
+    sv = stamped.read_text().splitlines()[0].strip() if stamped.exists() else "(absent)"
+    print(f"adw_modules: template {tv}, stamped {sv}")
+
+    if not drifted and not missing:
+        print("no drift — every vendored file matches the template")
+        return 0
+    for d in missing:
+        print(f"  MISSING  {d.relative_to(root)}")
+    for d in drifted:
+        print(f"  DRIFTED  {d.relative_to(root)}")
+    print("\nA drifted file is a FORK, not a customisation. Move the change into")
+    print("data if you can — commands belong in the `quality:` block of")
+    print("sssf.config.yaml, models in `agents:`, prompts in adw_data/. If it is a")
+    print("genuine fix, send it upstream. `--force` re-stamps and DISCARDS the edit.")
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
+    parser.add_argument("--check", action="store_true",
+                        help="report vendored files that drifted from the templates, then exit")
+    parser.add_argument("--adws", default="",
+                        help="comma-separated ADW names to stamp (default: all). "
+                             "A small repo should not inherit nine workflows it will never run.")
     args = parser.parse_args()
+
+    if args.check:
+        return check_drift(Path.cwd())
 
     root = Path.cwd()
     stamped, skipped = [], []
 
-    stamp(TEMPLATES / "adws", root / "adws", args.force, stamped, skipped)
+    # The examples are a CATALOGUE you select from, not a payload you receive
+    # whole. adw_modules/ and adw_data/ always come; the adw_*.py workflows are
+    # filtered, because a repo that will only ever run `sdlc` should not carry
+    # eleven other chains it has to read past.
+    wanted = {n.strip() for n in args.adws.split(",") if n.strip()}
+    if wanted:
+        stamp(TEMPLATES / "adws" / "adw_modules", root / "adws" / "adw_modules",
+              args.force, stamped, skipped)
+        available = {p.stem[len("adw_"):]: p
+                     for p in (TEMPLATES / "adws").glob("adw_*.py")}
+        unknown = wanted - set(available)
+        if unknown:
+            print(f"unknown ADW(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+            print(f"available: {', '.join(sorted(available))}", file=sys.stderr)
+            return 2
+        for name in sorted(wanted):
+            stamp(available[name], root / "adws" / available[name].name,
+                  args.force, stamped, skipped)
+    else:
+        stamp(TEMPLATES / "adws", root / "adws", args.force, stamped, skipped)
     stamp(TEMPLATES / "prompt_engineering",
           root / "adws" / "adw_data" / "prompt_engineering", args.force, stamped, skipped)
     stamp(TEMPLATES / "harness_engineering",

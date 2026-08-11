@@ -31,6 +31,34 @@ The two `*_engineering` dirs mirror the two config keys of the same name: `promp
 
 ## Idempotency
 
+### Selecting what gets stamped
+
+```bash
+uv run .claude/skills/sssf/scripts/install.py --adws simple_sdlc,build_test
+```
+
+The example workflows are a **catalogue you select from**, not a payload you
+receive whole: a repo that will only ever run one chain should not carry eleven
+others it has to read past. `adw_modules/` and the prompt/harness data always
+come. An unknown name is refused and the available set is printed.
+
+### Checking for drift
+
+```bash
+uv run .claude/skills/sssf/scripts/install.py --check
+```
+
+`adws/adw_modules/` is **vendored** — it belongs to this skill, not to the repo
+it lands in. `--check` reports every vendored file that no longer matches its
+template, because a repo that edits one has forked silently, and the fork only
+announces itself when an upgrade reverts it or an ADW calls a name that was
+renamed. It **reports, never repairs**: what to do about a drifted file is a
+judgement call, and a tool that overwrote it would destroy the only copy.
+
+Move the change into data if you can — commands into the `quality:` block,
+models into `agents:`, prompts into `adw_data/`. If it is a genuine fix, send it
+upstream.
+
 Re-running is safe. `install.py` skips **every** file that already exists — your config, your prompts, and previously stamped code alike — and reports what it skipped, so a second run doubles as a drift check. To refresh stamped code (`adw_modules/`, the starter `adw_*.py`) to the skill's current version, run with `--force` — but know that `--force` overwrites ALL existing stamped files, including `sssf.config.yaml` and `prompt_engineering/`, so commit or back up user-owned edits first.
 
 ## Post-install checklist

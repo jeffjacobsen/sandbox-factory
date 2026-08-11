@@ -134,6 +134,43 @@ QualityArea = Literal["frontend", "backend"]
 QualityOperation = Literal["lint", "typecheck", "build"]
 
 
+class QualityCheckConfig(BaseModel):
+    """One quality command, as DATA in sssf.config.yaml.
+
+    This exists because the alternative was tried here and lost. quality.py
+    shipped generic, this repo customised it by EDITING the stamped surface —
+    hardcoded app paths, and `run_tests` renamed to `run_inkwell_tests`. Three
+    ADWs then called a name that no longer existed, and the AttributeError
+    surfaced at the TAIL of each chain, after the planner and the builder had
+    already spent: roughly $0.96 before anyone saw it.
+
+    So: the function names are permanent and the commands are per-project data.
+    Customising a stamped repo must never mean editing a stamped file.
+    """
+
+    name: str
+    area: QualityArea
+    operation: QualityOperation
+    argv: list[str]
+    timeout_seconds: int = 120
+
+
+class QualityConfig(BaseModel):
+    """The `quality:` block. Absent means this project declares no checks.
+
+    argv LISTS rather than shell strings, and BARE binary names rather than
+    absolute paths: an ADW inherits the operator's environment, so `bun` resolves
+    off PATH here for the same reason it does in their shell, and resolving it
+    would bake one machine's layout into every trace and artifact log.
+    """
+
+    # The suite `run_tests` runs. Empty means this project has no test command,
+    # and the ADWs that gate on tests say so instead of inventing one.
+    test: list[str] = Field(default_factory=list)
+    test_timeout_seconds: int = 600
+    checks: list[QualityCheckConfig] = Field(default_factory=list)
+
+
 class QualityCheckSpec(BaseModel):
     """One deterministic quality command."""
 
@@ -346,6 +383,7 @@ class ObservabilityConfig(BaseModel):
 class SSSFConfig(BaseModel):
     defaults: ConfigDefaults = Field(default_factory=ConfigDefaults)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+    quality: QualityConfig = Field(default_factory=QualityConfig)
     agents: list[AgentConfig] = Field(default_factory=list)
 
 
