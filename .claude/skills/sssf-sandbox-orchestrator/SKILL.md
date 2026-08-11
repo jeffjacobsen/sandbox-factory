@@ -147,7 +147,9 @@ Everything else lives in the target repo's `health:` block, because "pi is healt
 answers" is a claim about the PAYLOAD. Each entry is a `cmd` (fails on non-zero exit, on empty
 output, or on a `reject_stdout` match — `pi --list-models` **exits 0 while printing "No models
 available"**, which is exactly what `reject_stdout` is for) or a `script` whose exit code is the
-verdict and which receives `CONFIG` as `$1`. This repo declares two: the pi registry, and one script
+verdict and which receives `CONFIG` as `$1`. Both output matches are **case-insensitive plain
+substrings** — so `expect_stdout: LISTENING` also matches the word "listening" inside a failure
+message. Choose sentinels that cannot appear in the failure case. This repo declares two: the pi registry, and one script
 covering roster ping + non-zero cost + remaining credit — together because all three need the
 runtime key already in the clone's `.env`, so the key never crosses the wire.
 

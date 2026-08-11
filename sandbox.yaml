@@ -62,7 +62,12 @@ secrets:
 # over OpenRouter" — which is why it travels with the repo. A project that makes
 # no such claim declares no health block and still gates on A.
 #
-# `cmd` fails on a non-zero exit, on empty stdout, or on a reject_stdout match.
+# `cmd` fails on a non-zero exit, on empty stdout, on a reject_stdout match, or
+# on a missing expect_stdout. Both matches are CASE-INSENSITIVE and are plain
+# substrings, not patterns — that is what the original assertion B used against
+# pi's "No models available", and a case-sensitive match would miss a capitalised
+# variant of exactly the string it exists to catch. Pick sentinels accordingly:
+# expect_stdout: LISTENING also matches the word "listening" in a failure message.
 # `script` gets the roster config as $1 and its exit code is the verdict.
 health:
   # pi EXITS 0 while printing "No models available", so the exit code proves

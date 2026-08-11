@@ -72,7 +72,10 @@ SERVICE_FIELDS = {"dir", "cmd", "port", "public", "requires", "env"}
 TOOLCHAIN = ("bun", "just", "uv")
 
 # A health entry is a `cmd` with optional output assertions, or a `script` whose
-# exit code is the verdict. Exactly one escape hatch per section, deliberately:
+# exit code is the verdict. expect_stdout/reject_stdout are case-insensitive
+# plain substrings (`grep -qiF`), which is what assertion B used against pi's
+# "No models available" -- a case-sensitive match would miss the capitalisation
+# it exists to catch. Exactly one escape hatch per section, deliberately:
 # the moment a manifest grows conditionals it is a DSL, and the answer to
 # anything expressive is a repo-local script, not a new key.
 HEALTH_FIELDS = {"name", "cmd", "script", "expect_stdout", "reject_stdout"}
