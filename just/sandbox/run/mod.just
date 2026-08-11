@@ -35,11 +35,21 @@ cmd RUN_ID +CMD:
     # does not exist, which is the check we want before touching the network.
     VM=$("$RR" get {{RUN_ID}} vm_name)
     [ -n "$VM" ] || { echo "run cmd {{RUN_ID}}: no vm_name in the run record — is it mounted?" >&2; exit 1; }
-    echo "→ run cmd {{RUN_ID}} on $VM: {{CMD}}"
     # {{CMD}} is interpolated verbatim rather than rebuilt from "$@" on purpose:
     # this is an escape hatch, so the pipes, globs and quotes you typed are meant
-    # to reach the remote shell intact. `cd app` matches where FILL clones.
-    ssh "$VM".exe.xyz "cd app && {{CMD}}"
+    # to reach the remote shell intact. But interpolating it straight into a
+    # double-quoted string desyncs the quoting the moment CMD contains a `"` —
+    # `grep -E "^(name|repo):"` left the parens bare and the recipe died on a
+    # syntax error before ssh was even reached. A QUOTED heredoc takes the body
+    # with no expansion and no quote parsing at all, so the text survives into a
+    # normal bash variable and each use below quotes it once, properly.
+    CMD_TEXT=$(cat <<'SBX_CMD_EOF'
+    {{CMD}}
+    SBX_CMD_EOF
+    )
+    printf '→ run cmd %s on %s: %s\n' '{{RUN_ID}}' "$VM" "$CMD_TEXT"
+    # `cd app` matches where FILL clones.
+    ssh "$VM".exe.xyz "cd app && $CMD_TEXT"
 
 # usage: just sbx run agent <run-id> "remember the number 42, reply STORED"
 #        just sbx run agent <run-id> "what number did I ask you to remember?"
