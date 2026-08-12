@@ -113,3 +113,17 @@ kickoff:
   #   {workflow}  the ADW recipe name        {prompt}  the prompt, already quoted
   #   {config}    ` --config <path>` or ""   {extra}   the ADW's own flags
   default: "just --shell bash --shell-arg -c adw {workflow} {prompt}{config} {extra}"
+
+# What TEARDOWN pulls off the box before destroying it. These four were
+# hardcoded in the orchestrator's teardown until the `artifacts` field existed —
+# three of them are SSSF paths, so every other repo it mounted harvested nothing
+# but the log and never said so. They are ours, so they live here now.
+#
+# Repo-relative, no whitespace, and `ls -d` filters to what exists: a run that
+# died before writing app_docs/ is not an error. Omit the block and the default
+# is `run.log` alone.
+artifacts:
+  - specs                    # the planner's output
+  - app_docs                 # the documenter's output
+  - adws/adw_data/sssf.db    # the trace db: sessions, phases, events, cost
+  - run.log                  # the console transcript EXECUTE redirects into
